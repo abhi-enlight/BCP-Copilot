@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
-  Sparkle,
   Database,
   Brain,
   Cpu,
@@ -11,9 +10,11 @@ import {
   Lightning,
   CaretDown,
   CaretUp,
+  Receipt,
+  Kanban,
 } from "@phosphor-icons/react";
 
-interface IntegrationItem {
+export interface IntegrationItem {
   id: string;
   name: string;
   shortName: string;
@@ -27,38 +28,70 @@ interface IntegrationItem {
   border: string;
   badgeBg: string;
   badgeText: string;
+  isReadWrite?: boolean;
 }
 
-const INTEGRATIONS: IntegrationItem[] = [
+export const INTEGRATIONS_LIST: IntegrationItem[] = [
+  {
+    id: "zoho-projects",
+    name: "Zoho Projects",
+    shortName: "Zoho Projects",
+    category: "Project & Task Management",
+    status: "connected",
+    metric: "Read & Write",
+    detail: "Live Read & Write Active • Auto-creates Projects, Milestones & Aspect Tasks on approval",
+    icon: Kanban,
+    color: "text-emerald-700",
+    bg: "bg-emerald-50/80",
+    border: "border-emerald-200",
+    badgeBg: "bg-emerald-100",
+    badgeText: "text-emerald-800",
+    isReadWrite: true,
+  },
+  {
+    id: "zoho-crm",
+    name: "Zoho CRM Suite",
+    shortName: "Zoho CRM",
+    category: "Enterprise Cloud CRM",
+    status: "connected",
+    metric: "Connected",
+    detail: "Deals, Client Accounts, Contacts, Commercial Estimates & SOW Deal Tracking",
+    icon: Database,
+    color: "text-emerald-700",
+    bg: "bg-emerald-50/80",
+    border: "border-emerald-200",
+    badgeBg: "bg-emerald-100",
+    badgeText: "text-emerald-800",
+  },
+  {
+    id: "zoho-books",
+    name: "Zoho Books",
+    shortName: "Zoho Books",
+    category: "Accounting & Escrow",
+    status: "connected",
+    metric: "Connected",
+    detail: "100% Advance Payment Verification for EGV Pool, GST Invoices & Ledger Reconciliation",
+    icon: Receipt,
+    color: "text-emerald-700",
+    bg: "bg-emerald-50/80",
+    border: "border-emerald-200",
+    badgeBg: "bg-emerald-100",
+    badgeText: "text-emerald-800",
+  },
   {
     id: "n8n",
     name: "n8n Orchestrator",
     shortName: "n8n Engine",
     category: "Workflow Automation",
     status: "active",
-    metric: "4 Workflows",
-    detail: "Port 5678 • Real-time NDJSON streaming & active chat webhooks",
+    metric: "Port 5678",
+    detail: "Real-time NDJSON streaming, webhook router & Zoho multi-service orchestration",
     icon: Lightning,
     color: "text-emerald-700",
-    bg: "bg-emerald-50/70",
-    border: "border-emerald-200/80",
-    badgeBg: "bg-emerald-100/80",
+    bg: "bg-emerald-50/80",
+    border: "border-emerald-200",
+    badgeBg: "bg-emerald-100",
     badgeText: "text-emerald-800",
-  },
-  {
-    id: "zoho",
-    name: "Zoho CRM Suite",
-    shortName: "Zoho CRM",
-    category: "Enterprise Cloud SaaS",
-    status: "connected",
-    metric: "OAuth 2.0",
-    detail: "Deals, Milestones, Campaigns & automatic task logging",
-    icon: Database,
-    color: "text-amber-700",
-    bg: "bg-amber-50/70",
-    border: "border-amber-200/80",
-    badgeBg: "bg-amber-100/80",
-    badgeText: "text-amber-800",
   },
   {
     id: "supabase",
@@ -67,27 +100,27 @@ const INTEGRATIONS: IntegrationItem[] = [
     category: "Vector Knowledge Base",
     status: "synced",
     metric: "34 SOPs",
-    detail: "HNSW Vector Index • BigCity Assured Reward SOP Precedents",
+    detail: "HNSW Vector Index • BigCity Assured Reward Precedents & Legal Templates",
     icon: Brain,
     color: "text-sky-700",
-    bg: "bg-sky-50/70",
-    border: "border-sky-200/80",
-    badgeBg: "bg-sky-100/80",
+    bg: "bg-sky-50/80",
+    border: "border-sky-200",
+    badgeBg: "bg-sky-100",
     badgeText: "text-sky-800",
   },
   {
     id: "gemini",
-    name: "Google Gemini 2.5 Flash",
-    shortName: "Gemini 2.5",
+    name: "Google Gemini 3.7 Flash",
+    shortName: "Gemini 3.7",
     category: "LLM Reasoning Engine",
     status: "active",
-    metric: "0.3 Temp",
-    detail: "Low-latency task extraction, policy guardrail & campaign synthesizer",
+    metric: "Active",
+    detail: "AI 4-Aspect Decomposition (Legal, Compliance, Accounting, Implementation)",
     icon: Cpu,
     color: "text-indigo-700",
-    bg: "bg-indigo-50/70",
-    border: "border-indigo-200/80",
-    badgeBg: "bg-indigo-100/80",
+    bg: "bg-indigo-50/80",
+    border: "border-indigo-200",
+    badgeBg: "bg-indigo-100",
     badgeText: "text-indigo-800",
   },
 ];
@@ -110,12 +143,12 @@ export default function IntegrationStatus() {
             <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
           </span>
           <span className="text-[11px] font-bold text-slate-700 tracking-tight uppercase">
-            Live Infrastructure
+            Connected Services
           </span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-white border border-slate-200 text-slate-600 shadow-2xs">
-            4/4
+            6/6 Live
           </span>
           <span className="text-slate-400 group-hover:text-slate-700 transition-colors">
             {isSectionOpen ? <CaretUp size={12} /> : <CaretDown size={12} />}
@@ -133,7 +166,7 @@ export default function IntegrationStatus() {
             transition={{ duration: 0.2 }}
             className="space-y-1.5 mt-2 overflow-hidden"
           >
-            {INTEGRATIONS.map((item) => {
+            {INTEGRATIONS_LIST.slice(0, 3).map((item) => {
               const isSelected = selectedId === item.id;
               const IconComp = item.icon;
 
@@ -142,7 +175,7 @@ export default function IntegrationStatus() {
                   <button
                     type="button"
                     onClick={() => setSelectedId(isSelected ? null : item.id)}
-                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl transition-all duration-150 text-left border ${
+                    className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl transition-all duration-150 text-left border ${
                       isSelected
                         ? `${item.bg} ${item.border} shadow-xs ring-1 ring-slate-300`
                         : "bg-white hover:bg-slate-50 border-slate-200/90 shadow-2xs hover:border-slate-300"
@@ -150,24 +183,20 @@ export default function IntegrationStatus() {
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <div
-                        className={`flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center ${item.bg} ${item.border} border`}
+                        className={`flex-shrink-0 w-5 h-5 rounded-md flex items-center justify-center ${item.bg} ${item.border} border`}
                       >
-                        <IconComp size={13} weight="duotone" className={item.color} />
+                        <IconComp size={12} weight="duotone" className={item.color} />
                       </div>
                       <div className="truncate">
-                        <span className="text-[12px] font-semibold text-slate-800 block leading-tight truncate">
+                        <span className="text-[11.5px] font-semibold text-slate-800 block leading-tight truncate">
                           {item.shortName}
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-normal block leading-tight truncate">
-                          {item.category}
                         </span>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-1.5 flex-shrink-0 pl-1.5">
-                      <span
-                        className={`text-[10px] font-mono font-medium px-2 py-0.5 rounded-md border ${item.bg} ${item.border} ${item.color}`}
-                      >
+                      <span className="inline-flex items-center gap-1 text-[9.5px] font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                         {item.metric}
                       </span>
                     </div>
@@ -183,14 +212,14 @@ export default function IntegrationStatus() {
                         transition={{ duration: 0.15 }}
                         className="overflow-hidden"
                       >
-                        <div className="mt-1 p-2.5 rounded-xl bg-slate-900 text-white text-[11px] leading-relaxed shadow-md border border-slate-800 space-y-1">
-                          <div className="flex items-center justify-between text-slate-400 font-mono text-[9.5px]">
+                        <div className="mt-1 p-2.5 rounded-xl bg-slate-900 text-white text-[10.5px] leading-relaxed shadow-md border border-slate-800 space-y-1">
+                          <div className="flex items-center justify-between text-slate-400 font-mono text-[9px]">
                             <span>{item.name.toUpperCase()}</span>
                             <span className="text-emerald-400 flex items-center gap-1">
-                              <CheckCircle size={11} weight="fill" /> READY
+                              <CheckCircle size={10} weight="fill" /> CONNECTED
                             </span>
                           </div>
-                          <p className="text-slate-200 font-medium text-[11.5px] leading-snug">{item.detail}</p>
+                          <p className="text-slate-200 font-medium text-[11px] leading-snug">{item.detail}</p>
                         </div>
                       </motion.div>
                     )}
