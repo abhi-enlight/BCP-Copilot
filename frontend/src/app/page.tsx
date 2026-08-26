@@ -3,112 +3,111 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
-  ChatsCircle,
-  Plus,
-  Trash,
-  SidebarSimple,
   Sparkle,
+  Plus,
+  DownloadSimple,
   Database,
   Brain,
-  DownloadSimple,
-  Tag,
-  Target,
-  User,
-  ShieldCheck,
-  QrCode,
-  CaretRight,
+  Cpu,
+  Lightning,
+  CheckCircle,
+  CaretDown,
 } from "@phosphor-icons/react";
 import ChatMessage, { type Message } from "@/components/ChatMessage";
 import ChatInput from "@/components/ChatInput";
 import ThinkingProcess from "@/components/ThinkingProcess";
 import EmptyState from "@/components/EmptyState";
-import IntegrationStatus from "@/components/IntegrationStatus";
 
 interface Session {
   id: string;
   title: string;
   messages: Message[];
   createdAt: Date;
-  campaignContext?: string;
 }
 
-const CAMPAIGN_SHORTCUTS = [
+const SERVICES_HEALTH = [
   {
-    name: "Nestle Festive QR",
-    type: "200k On-Pack UPI",
-    budget: "₹35L",
-    color: "text-amber-700 bg-amber-50 border-amber-200/80",
-    prompt: "Give me the status, SOP readiness, and historical OTP precautions for Nestle Festive 200k On-Pack QR Cashback.",
+    name: "n8n Orchestrator",
+    desc: "Workflow Engine & Active Webhooks",
+    metric: "4 Workflows Live",
+    icon: Lightning,
+    color: "text-emerald-600 bg-emerald-50 border-emerald-200",
   },
   {
-    name: "Britannia 50-50 Draw",
-    type: "OCR Bill Upload",
-    budget: "₹25L",
-    color: "text-indigo-700 bg-indigo-50 border-indigo-200/80",
-    prompt: "Review the campaign brief and partner voucher dependencies for Britannia 50-50 Bill Upload Lucky Draw.",
+    name: "Zoho CRM Suite",
+    desc: "Deals, Invoices, Accounts & Tasks",
+    metric: "OAuth 2.0 (IN)",
+    icon: Database,
+    color: "text-amber-600 bg-amber-50 border-amber-200",
   },
   {
-    name: "Samsung Diwali Mega",
-    type: "Assured OTT EGV",
-    budget: "₹75L",
-    color: "text-sky-700 bg-sky-50 border-sky-200/80",
-    prompt: "What is the commercial budget and 72-hour UAT checklist for Samsung Galaxy Festive OTT Rewards 2026?",
+    name: "Supabase pgvector",
+    desc: "34 BigCity SOP Tasks & Precedents",
+    metric: "HNSW Indexed",
+    icon: Brain,
+    color: "text-sky-600 bg-sky-50 border-sky-200",
+  },
+  {
+    name: "Google Gemini 2.5",
+    desc: "Low-Latency Campaign Reasoning",
+    metric: "0.3 Temp",
+    icon: Cpu,
+    color: "text-indigo-600 bg-indigo-50 border-indigo-200",
   },
 ];
 
-function createSession(title = "New conversation", campaignContext?: string): Session {
+function createSession(): Session {
   return {
     id: `session-${Date.now()}`,
-    title,
+    title: "New campaign brief",
     messages: [],
     createdAt: new Date(),
-    campaignContext,
   };
 }
 
 function deriveTitle(messages: Message[]): string {
   const firstUser = messages.find((m) => m.role === "user");
-  if (!firstUser) return "New conversation";
+  if (!firstUser) return "New campaign brief";
   return (
-    firstUser.content.slice(0, 36) +
-    (firstUser.content.length > 36 ? "..." : "")
+    firstUser.content.slice(0, 42) +
+    (firstUser.content.length > 42 ? "..." : "")
   );
 }
 
 export default function ChatPage() {
-  const [sessions, setSessions] = useState<Session[]>(() => [createSession()]);
-  const [activeSessionId, setActiveSessionId] = useState<string>(() => sessions[0].id);
+  const [session, setSession] = useState<Session>(() => createSession());
   const [isLoading, setIsLoading] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const userHasScrolledUpRef = useRef(false);
 
-  const activeSession =
-    sessions.find((s) => s.id === activeSessionId) || sessions[0];
-  const messages = activeSession.messages;
+  const messages = session.messages;
 
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  // Smooth throttled auto-scroll that respects user scrolling
+  const scrollToBottom = useCallback((force = false) => {
+    if (force || !userHasScrolledUpRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, []);
+
+  const handleScroll = () => {
+    if (!scrollContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    // If user is within 120px of bottom, stick to bottom
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 120;
+    userHasScrolledUpRef.current = !isAtBottom;
+  };
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isLoading, isThinking, scrollToBottom]);
-
-  const updateSession = useCallback(
-    (sessionId: string, updater: (session: Session) => Session) => {
-      setSessions((prev) =>
-        prev.map((s) => (s.id === sessionId ? updater(s) : s))
-      );
-    },
-    []
-  );
+  }, [messages, isThinking, scrollToBottom]);
 
   const sendMessage = useCallback(
     async (content: string) => {
-      setError(null);
+      userHasScrolledUpRef.current = false;
       const userMessage: Message = {
         id: `msg-${Date.now()}-user`,
         role: "user",
@@ -116,13 +115,13 @@ export default function ChatPage() {
         timestamp: new Date(),
       };
 
-      updateSession(activeSessionId, (s) => ({
-        ...s,
-        messages: [...s.messages, userMessage],
+      setSession((prev) => ({
+        ...prev,
+        messages: [...prev.messages, userMessage],
         title:
-          s.messages.length === 0
-            ? deriveTitle([...s.messages, userMessage])
-            : s.title,
+          prev.messages.length === 0
+            ? deriveTitle([...prev.messages, userMessage])
+            : prev.title,
       }));
 
       setIsLoading(true);
@@ -137,7 +136,7 @@ export default function ChatPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: content,
-            sessionId: activeSessionId,
+            sessionId: session.id,
           }),
           signal: controller.signal,
         });
@@ -151,7 +150,7 @@ export default function ChatPage() {
           throw new Error(err.error || `HTTP ${response.status}`);
         }
 
-        if (contentType.includes("text/event-stream")) {
+        if (contentType.includes("text/event-stream") || response.body) {
           const reader = response.body?.getReader();
           if (!reader) throw new Error("No stream available");
 
@@ -187,14 +186,14 @@ export default function ChatPage() {
                     if (!firstChunkReceived) {
                       firstChunkReceived = true;
                       setIsThinking(false);
-                      updateSession(activeSessionId, (s) => ({
-                        ...s,
-                        messages: [...s.messages, assistantMessage],
+                      setSession((prev) => ({
+                        ...prev,
+                        messages: [...prev.messages, assistantMessage],
                       }));
                     }
 
-                    updateSession(activeSessionId, (s) => {
-                      const msgs = [...s.messages];
+                    setSession((prev) => {
+                      const msgs = [...prev.messages];
                       const last = msgs[msgs.length - 1];
                       if (last && last.role === "assistant") {
                         msgs[msgs.length - 1] = {
@@ -202,7 +201,7 @@ export default function ChatPage() {
                           content: last.content + text,
                         };
                       }
-                      return { ...s, messages: msgs };
+                      return { ...prev, messages: msgs };
                     });
                   }
                 } catch {
@@ -210,13 +209,13 @@ export default function ChatPage() {
                     if (!firstChunkReceived) {
                       firstChunkReceived = true;
                       setIsThinking(false);
-                      updateSession(activeSessionId, (s) => ({
-                        ...s,
-                        messages: [...s.messages, assistantMessage],
+                      setSession((prev) => ({
+                        ...prev,
+                        messages: [...prev.messages, assistantMessage],
                       }));
                     }
-                    updateSession(activeSessionId, (s) => {
-                      const msgs = [...s.messages];
+                    setSession((prev) => {
+                      const msgs = [...prev.messages];
                       const last = msgs[msgs.length - 1];
                       if (last && last.role === "assistant") {
                         msgs[msgs.length - 1] = {
@@ -224,7 +223,7 @@ export default function ChatPage() {
                           content: last.content + data,
                         };
                       }
-                      return { ...s, messages: msgs };
+                      return { ...prev, messages: msgs };
                     });
                   }
                 }
@@ -239,14 +238,13 @@ export default function ChatPage() {
           const assistantMessage: Message = {
             id: `msg-${Date.now()}-assistant`,
             role: "assistant",
-            content:
-              data.text || data.error || "No response from BCP Assist.",
+            content: data.text || data.error || "No response from BCP Assist.",
             timestamp: new Date(),
           };
 
-          updateSession(activeSessionId, (s) => ({
-            ...s,
-            messages: [...s.messages, assistantMessage],
+          setSession((prev) => ({
+            ...prev,
+            messages: [...prev.messages, assistantMessage],
           }));
         }
       } catch (err: unknown) {
@@ -255,18 +253,17 @@ export default function ChatPage() {
 
         const errorMessage =
           err instanceof Error ? err.message : "Something went wrong";
-        setError(errorMessage);
 
         const errMessage: Message = {
           id: `msg-${Date.now()}-error`,
           role: "assistant",
-          content: `**Connection Alert:** ${errorMessage}\n\nPlease check that n8n is running on \`localhost:5678\` and the chat webhook is active.`,
+          content: `**Connection Alert:** ${errorMessage}\n\nPlease verify that your n8n server and active webhook are running.`,
           timestamp: new Date(),
         };
 
-        updateSession(activeSessionId, (s) => ({
-          ...s,
-          messages: [...s.messages, errMessage],
+        setSession((prev) => ({
+          ...prev,
+          messages: [...prev.messages, errMessage],
         }));
       } finally {
         setIsLoading(false);
@@ -274,7 +271,7 @@ export default function ChatPage() {
         abortRef.current = null;
       }
     },
-    [activeSessionId, updateSession]
+    [session.id]
   );
 
   const handleStop = useCallback(() => {
@@ -284,44 +281,9 @@ export default function ChatPage() {
   }, []);
 
   const handleNewChat = useCallback(() => {
-    const newSession = createSession();
-    setSessions((prev) => [newSession, ...prev]);
-    setActiveSessionId(newSession.id);
-    setError(null);
+    setSession(createSession());
+    userHasScrolledUpRef.current = false;
   }, []);
-
-  const handleSelectCampaign = useCallback(
-    (campaign: (typeof CAMPAIGN_SHORTCUTS)[0]) => {
-      const newSession = createSession(campaign.name, campaign.name);
-      setSessions((prev) => [newSession, ...prev]);
-      setActiveSessionId(newSession.id);
-      setError(null);
-      // Automatically send the starter inquiry
-      setTimeout(() => {
-        sendMessage(campaign.prompt);
-      }, 50);
-    },
-    [sendMessage]
-  );
-
-  const handleDeleteSession = useCallback(
-    (sessionId: string, e: React.MouseEvent) => {
-      e.stopPropagation();
-      setSessions((prev) => {
-        const remaining = prev.filter((s) => s.id !== sessionId);
-        if (remaining.length === 0) {
-          const fresh = createSession();
-          setActiveSessionId(fresh.id);
-          return [fresh];
-        }
-        if (sessionId === activeSessionId) {
-          setActiveSessionId(remaining[0].id);
-        }
-        return remaining;
-      });
-    },
-    [activeSessionId]
-  );
 
   const handleExport = useCallback(() => {
     if (messages.length === 0) return;
@@ -339,252 +301,171 @@ export default function ChatPage() {
   }, [messages]);
 
   return (
-    <div className="flex h-screen bg-[#F8FAFC] text-slate-900 overflow-hidden font-sans antialiased">
-      {/* Premium Sidebar */}
-      <motion.aside
-        initial={false}
-        animate={{ width: sidebarOpen ? 300 : 0 }}
-        transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-        className="flex-shrink-0 border-r border-slate-200/90 bg-white flex flex-col overflow-hidden z-20 shadow-xs"
-      >
-        {/* Brand & Workspace Header */}
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-white">
+    <div className="flex flex-col h-screen bg-[#F8FAFC] text-slate-900 overflow-hidden font-sans antialiased selection:bg-indigo-100 selection:text-indigo-950">
+      {/* Top Header Bar */}
+      <header className="h-14 border-b border-slate-200/80 bg-white/90 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between z-30 flex-shrink-0 shadow-2xs">
+        {/* Brand & Infrastructure Status */}
+        <div className="flex items-center gap-3">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-600 to-indigo-500 flex items-center justify-center shadow-sm text-white ring-2 ring-indigo-50">
               <Sparkle size={17} weight="fill" />
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <h1 className="text-sm font-bold tracking-tight text-slate-900">
+                <span className="text-[13.5px] font-bold tracking-tight text-slate-900">
                   BCP Assist
-                </h1>
+                </span>
                 <span className="text-[9px] font-mono font-semibold px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
                   v1.0
                 </span>
               </div>
-              <span className="text-[10px] text-slate-400 font-medium block leading-tight">
-                BigCity Campaign Copilot
+              <span className="text-[10px] text-slate-400 font-medium block leading-tight hidden sm:block">
+                Campaign Copilot & Intelligence
               </span>
             </div>
           </div>
 
-          <button
-            onClick={() => setSidebarOpen(false)}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors border border-transparent hover:border-slate-200 cursor-pointer"
-            title="Collapse sidebar"
-          >
-            <SidebarSimple size={16} />
-          </button>
-        </div>
+          {/* Infrastructure Health Dropdown Trigger */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setStatusMenuOpen(!statusMenuOpen)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-[11px] font-medium text-slate-700 transition-colors cursor-pointer"
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span className="hidden sm:inline font-mono text-[10.5px]">4/4 Connected</span>
+              <CaretDown size={11} className="text-slate-400" />
+            </button>
 
-        {/* Primary "+ New Brief" Action Button */}
-        <div className="p-3 pb-2 bg-white">
-          <button
-            onClick={handleNewChat}
-            className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs shadow-sm hover:shadow-md transition-all cursor-pointer group"
-          >
-            <div className="flex items-center gap-2">
-              <Plus size={15} weight="bold" className="text-indigo-300 group-hover:rotate-90 transition-transform duration-200" />
-              <span>New Campaign Brief</span>
-            </div>
-            <kbd className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-              +
-            </kbd>
-          </button>
-        </div>
-
-        {/* Live Connected Services Widget */}
-        <IntegrationStatus />
-
-        {/* Quick Campaign Shortcuts */}
-        <div className="p-3 border-b border-slate-100 bg-white">
-          <div className="flex items-center justify-between mb-2 px-1">
-            <span className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-              <Target size={12} weight="bold" />
-              Active Campaigns
-            </span>
-            <span className="text-[10px] text-slate-400 font-medium">Zoho CRM</span>
-          </div>
-
-          <div className="space-y-1">
-            {CAMPAIGN_SHORTCUTS.map((camp) => (
-              <button
-                key={camp.name}
-                type="button"
-                onClick={() => handleSelectCampaign(camp)}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-left hover:bg-slate-50 border border-transparent hover:border-slate-200/90 transition-all duration-150 cursor-pointer group"
-              >
-                <div className="min-w-0 pr-2">
-                  <span className="text-[12px] font-semibold text-slate-800 block truncate group-hover:text-indigo-600 transition-colors">
-                    {camp.name}
-                  </span>
-                  <span className="text-[10px] text-slate-400 block truncate">
-                    {camp.type}
-                  </span>
-                </div>
-                <span className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-md border ${camp.color} flex-shrink-0`}>
-                  {camp.budget}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Conversation Sessions List */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-1 bg-white">
-          <span className="text-[10.5px] font-bold uppercase tracking-wider text-slate-400 px-1 mb-2 block flex items-center justify-between">
-            <span>Sessions History</span>
-            <span className="text-[9.5px] font-mono text-slate-400 font-normal">
-              {sessions.length} TOTAL
-            </span>
-          </span>
-
-          {sessions.map((s) => {
-            const isActive = s.id === activeSessionId;
-            return (
-              <div
-                key={s.id}
-                onClick={() => {
-                  setActiveSessionId(s.id);
-                  setError(null);
-                }}
-                className={`group relative flex items-center justify-between px-3 py-2.5 rounded-xl text-xs cursor-pointer transition-all duration-150 border ${
-                  isActive
-                    ? "bg-indigo-50/90 text-indigo-950 font-bold border-indigo-200 shadow-2xs"
-                    : "text-slate-600 hover:bg-slate-50/90 border-transparent hover:border-slate-200/80"
-                }`}
-              >
-                {/* Active Indicator Line */}
-                {isActive && (
-                  <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-indigo-600" />
-                )}
-
-                <div className="flex items-center gap-2 truncate min-w-0">
-                  <ChatsCircle
-                    size={14}
-                    weight={isActive ? "fill" : "regular"}
-                    className={isActive ? "text-indigo-600 flex-shrink-0" : "text-slate-400 flex-shrink-0"}
+            {/* Infrastructure Health Popover Dropdown */}
+            <AnimatePresence>
+              {statusMenuOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setStatusMenuOpen(false)}
                   />
-                  <span className="truncate text-[12.5px]">{s.title}</span>
-                </div>
-
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  {s.messages.length > 0 && !isActive && (
-                    <span className="text-[10px] font-mono text-slate-400 group-hover:hidden">
-                      {s.messages.length}
-                    </span>
-                  )}
-                  <button
-                    onClick={(e) => handleDeleteSession(s.id, e)}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 transition-opacity rounded"
-                    title="Delete session"
+                  <motion.div
+                    initial={{ opacity: 0, y: 6, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute left-0 top-full mt-2 w-72 rounded-2xl bg-white border border-slate-200/90 p-3 shadow-xl z-50 space-y-2"
                   >
-                    <Trash size={12} />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100 px-1">
+                      <span className="text-[11px] font-bold text-slate-800 uppercase tracking-tight">
+                        Live Infrastructure
+                      </span>
+                      <span className="text-[10px] font-mono text-emerald-600 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                        100% OPERATIONAL
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      {SERVICES_HEALTH.map((item) => {
+                        const IconComp = item.icon;
+                        return (
+                          <div
+                            key={item.name}
+                            className="flex items-center justify-between p-2 rounded-xl bg-slate-50/60 border border-slate-100"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className={`p-1.5 rounded-lg border ${item.color}`}>
+                                <IconComp size={13} weight="duotone" />
+                              </div>
+                              <div className="truncate">
+                                <span className="text-[11.5px] font-semibold text-slate-800 block truncate">
+                                  {item.name}
+                                </span>
+                                <span className="text-[9.5px] text-slate-400 block truncate">
+                                  {item.desc}
+                                </span>
+                              </div>
+                            </div>
+                            <span className="text-[9.5px] font-mono font-medium text-slate-500 px-1.5 py-0.5 rounded bg-white border border-slate-200 flex-shrink-0">
+                              {item.metric}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
 
-        {/* User Profile & Footer Bar */}
-        <div className="p-3 border-t border-slate-200/80 bg-slate-50/50 flex items-center justify-between">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-7 h-7 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs shadow-2xs">
-              AR
-            </div>
-            <div className="truncate">
-              <span className="text-[12px] font-bold text-slate-900 block leading-tight truncate">
-                Abhinav Rai
-              </span>
-              <span className="text-[10px] text-slate-500 font-medium block leading-tight">
-                Campaign Lead SPOC
-              </span>
-            </div>
-          </div>
+        {/* Center Active Brief Title */}
+        <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-slate-50 border border-slate-200/80 max-w-sm truncate text-xs text-slate-600 font-medium">
+          <span className="truncate">{session.title}</span>
+        </div>
 
+        {/* Right Actions */}
+        <div className="flex items-center gap-2">
           {messages.length > 0 && (
             <button
               onClick={handleExport}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition-colors border border-slate-200 shadow-2xs text-[11px] font-medium cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-900 transition-colors border border-slate-200 shadow-2xs text-xs font-semibold cursor-pointer"
               title="Export session to Markdown"
             >
-              <DownloadSimple size={13} weight="bold" />
-              <span>Export</span>
+              <DownloadSimple size={14} weight="bold" />
+              <span className="hidden sm:inline">Export</span>
             </button>
           )}
+
+          <button
+            onClick={handleNewChat}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition-all shadow-xs cursor-pointer"
+          >
+            <Plus size={14} weight="bold" />
+            <span>New Brief</span>
+          </button>
         </div>
-      </motion.aside>
+      </header>
 
-      {/* Main Chat Workspace */}
-      <main className="flex-1 flex flex-col min-w-0 relative overflow-hidden bg-gradient-to-b from-[#F8FAFC] via-[#F8FAFC] to-[#F1F5F9]/60">
-        {/* Header Bar */}
-        <header className="h-14 border-b border-slate-200/90 flex items-center justify-between px-4 z-10 bg-white/90 backdrop-blur-md">
-          <div className="flex items-center gap-3">
-            {!sidebarOpen && (
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors border border-slate-200 cursor-pointer"
-                title="Open Sidebar"
-              >
-                <SidebarSimple size={16} />
-              </button>
-            )}
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-900 truncate max-w-[200px] sm:max-w-md">
-                {activeSession.title}
-              </span>
-              <span className="hidden sm:inline text-[10.5px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
-                Gemini 2.5 Flash + Zoho Tools
-              </span>
-            </div>
+      {/* Main Full-Width Chat Scroll Feed */}
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto px-4 py-6 sm:py-8 flex flex-col items-center scroll-smooth"
+      >
+        {messages.length === 0 ? (
+          <EmptyState onSelectPrompt={sendMessage} />
+        ) : (
+          <div className="w-full max-w-3xl space-y-5">
+            {messages.map((msg, index) => (
+              <ChatMessage key={msg.id} message={msg} index={index} />
+            ))}
+
+            {/* Live Thinking Stepper */}
+            <AnimatePresence>
+              {isThinking && <ThinkingProcess />}
+            </AnimatePresence>
           </div>
+        )}
+        <div ref={messagesEndRef} className="h-4" />
+      </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleNewChat}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition-all shadow-xs cursor-pointer"
-            >
-              <Plus size={14} weight="bold" />
-              <span>New Session</span>
-            </button>
-          </div>
-        </header>
-
-        {/* Message Feed Area */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 flex flex-col items-center">
-          {messages.length === 0 ? (
-            <EmptyState onSelectPrompt={sendMessage} />
-          ) : (
-            <div className="w-full max-w-3xl space-y-4">
-              {messages.map((msg, index) => (
-                <ChatMessage key={msg.id} message={msg} index={index} />
-              ))}
-
-              {/* Dynamic Live Thinking Stepper */}
-              <AnimatePresence>
-                {isThinking && <ThinkingProcess />}
-              </AnimatePresence>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Input Bar */}
-        <div className="p-4 bg-gradient-to-t from-[#F8FAFC] via-[#F8FAFC]/95 to-transparent">
-          <div className="max-w-3xl mx-auto">
-            <ChatInput
-              onSendMessage={sendMessage}
-              isLoading={isLoading}
-              onStop={handleStop}
-            />
-            <div className="flex items-center justify-between text-[11px] text-slate-400 px-2 mt-2">
-              <span>Press <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[10px] text-slate-600 font-mono shadow-2xs">Enter ↵</kbd> to send, <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[10px] text-slate-600 font-mono shadow-2xs">Shift + Enter</kbd> for newline</span>
-              <span className="hidden sm:inline">Protected by SOW Policy Guard</span>
-            </div>
+      {/* Floating Bottom Input Bar */}
+      <div className="p-4 bg-gradient-to-t from-[#F8FAFC] via-[#F8FAFC]/95 to-transparent flex-shrink-0">
+        <div className="max-w-3xl mx-auto">
+          <ChatInput
+            onSendMessage={sendMessage}
+            isLoading={isLoading}
+            onStop={handleStop}
+          />
+          <div className="flex items-center justify-between text-[11px] text-slate-400 px-2 mt-2">
+            <span>
+              Press <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[10px] text-slate-600 font-mono shadow-2xs">Enter ↵</kbd> to send, <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[10px] text-slate-600 font-mono shadow-2xs">Shift + Enter</kbd> for newline
+            </span>
+            <span className="hidden sm:inline">Protected by SOW Policy Guard</span>
           </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
