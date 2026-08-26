@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const N8N_WEBHOOK_URL =
-  process.env.N8N_WEBHOOK_URL || "http://localhost:5678/webhook/53c0c104-aa50-47b4-ad2a-7a98f069dc4a/chat";
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 interface ChatRequestBody {
   message: string;
@@ -9,6 +9,10 @@ interface ChatRequestBody {
 }
 
 export async function POST(request: NextRequest) {
+  const N8N_WEBHOOK_URL =
+    process.env.N8N_WEBHOOK_URL ||
+    "https://192b-103-216-214-34.ngrok-free.app/webhook/db9f5c37-f5d5-4581-9ca6-74e2221ef5e4/chat";
+
   try {
     const body: ChatRequestBody = await request.json();
     const { message, sessionId } = body;
