@@ -31,6 +31,8 @@ export async function POST(request: NextRequest) {
       headers: {
         "Content-Type": "application/json",
         "Accept": "application/json, text/event-stream, text/plain, */*",
+        "ngrok-skip-browser-warning": "69420",
+        "Bypass-Tunnel-Reminder": "true",
       },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(120_000),
