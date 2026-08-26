@@ -84,12 +84,12 @@ export default function Sidebar({
         }`}
       >
         {/* Brand Header */}
-        <div className="h-14 border-b border-stone-200/70 px-4 flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-stone-800 to-stone-900 flex items-center justify-center flex-shrink-0 shadow-sm">
-              <Sparkle size={16} weight="fill" className="text-amber-400" />
-            </div>
-            {!isCollapsed && (
+        <div className={`h-14 border-b border-stone-200/70 flex items-center flex-shrink-0 transition-all ${isCollapsed ? "justify-center px-0" : "justify-between px-4"}`}>
+          {!isCollapsed && (
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-stone-800 to-stone-900 flex items-center justify-center flex-shrink-0 shadow-sm">
+                <Sparkle size={16} weight="fill" className="text-amber-400" />
+              </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <span className="text-[13.5px] font-bold tracking-tight text-stone-900 truncate">
@@ -101,8 +101,8 @@ export default function Sidebar({
                   <span className="text-[11px] text-stone-400 truncate font-medium">BigCity Promotions</span>
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Desktop Collapse Toggle */}
           <button

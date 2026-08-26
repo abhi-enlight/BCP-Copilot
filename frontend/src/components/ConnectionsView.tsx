@@ -12,6 +12,7 @@ import {
   Cpu,
   CheckCircle,
   ArrowsClockwise,
+  Envelope,
 } from "@phosphor-icons/react";
 
 interface ServiceConnection {
@@ -22,7 +23,7 @@ interface ServiceConnection {
   statusLabel: string;
   statusColor: string;
   readWriteMode: "Read & Write" | "Read Only" | "Orchestration" | "Inference";
-  icon: any;
+  icon: string;
   iconBg: string;
   iconColor: string;
   metrics: { label: string; value: string }[];
@@ -47,7 +48,7 @@ export default function ConnectionsView() {
       statusLabel: "Read & Write",
       statusColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
       readWriteMode: "Read & Write",
-      icon: Kanban,
+      icon: "https://cdn.simpleicons.org/zoho/10b981",
       iconBg: "bg-emerald-50 border-emerald-200",
       iconColor: "text-emerald-600",
       metrics: [
@@ -75,7 +76,7 @@ export default function ConnectionsView() {
       statusLabel: "Connected",
       statusColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
       readWriteMode: "Read Only",
-      icon: Database,
+      icon: "https://cdn.simpleicons.org/zoho/10b981",
       iconBg: "bg-emerald-50 border-emerald-200",
       iconColor: "text-emerald-600",
       metrics: [
@@ -102,7 +103,7 @@ export default function ConnectionsView() {
       statusLabel: "Connected",
       statusColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
       readWriteMode: "Read Only",
-      icon: Receipt,
+      icon: "https://cdn.simpleicons.org/zoho/10b981",
       iconBg: "bg-emerald-50 border-emerald-200",
       iconColor: "text-emerald-600",
       metrics: [
@@ -129,7 +130,7 @@ export default function ConnectionsView() {
       statusLabel: "34 SOPs",
       statusColor: "bg-sky-50 text-sky-700 border-sky-200",
       readWriteMode: "Read Only",
-      icon: Brain,
+      icon: "https://cdn.simpleicons.org/supabase/0ea5e9",
       iconBg: "bg-sky-50 border-sky-200",
       iconColor: "text-sky-600",
       metrics: [
@@ -148,6 +149,32 @@ export default function ConnectionsView() {
       ],
     },
     {
+      id: "gmail",
+      name: "Google Workspace (Gmail)",
+      category: "Email & Communication",
+      status: "active",
+      statusLabel: "Connected",
+      statusColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      readWriteMode: "Read & Write",
+      icon: "https://upload.wikimedia.org/wikipedia/commons/7/7e/Gmail_icon_%282020%29.svg",
+      iconBg: "bg-emerald-50 border-emerald-200",
+      iconColor: "text-emerald-600",
+      metrics: [
+        { label: "Emails Synced", value: "24" },
+        { label: "Threads", value: "Active" },
+        { label: "Latency", value: "42ms" },
+        { label: "Inbox", value: "bcp.assist@" },
+      ],
+      endpoint: "https://gmail.googleapis.com/gmail/v1/users/me",
+      authMethod: "OAuth 2.0 (Gmail API)",
+      lastPing: "Just now (HTTP 200)",
+      capabilities: [
+        "Read incoming client briefs and attachments",
+        "Send automated milestone completion alerts",
+        "Draft and send SOWs for partner sign-off",
+      ],
+    },
+    {
       id: "gemini",
       name: "Gemini 3.7 Flash",
       category: "LLM Reasoning Engine",
@@ -155,7 +182,7 @@ export default function ConnectionsView() {
       statusLabel: "Active",
       statusColor: "bg-violet-50 text-violet-700 border-violet-200",
       readWriteMode: "Inference",
-      icon: Cpu,
+      icon: "https://cdn.simpleicons.org/google/4285F4",
       iconBg: "bg-violet-50 border-violet-200",
       iconColor: "text-violet-600",
       metrics: [
@@ -179,7 +206,7 @@ export default function ConnectionsView() {
     setIsPingingAll(true);
     setTimeout(() => {
       setIsPingingAll(false);
-      setPingSuccessNotice("All 5 connections verified healthy · avg latency 38ms");
+      setPingSuccessNotice("All 6 connections verified healthy · avg latency 38ms");
       setTimeout(() => setPingSuccessNotice(null), 4000);
     }, 800);
   };
@@ -194,7 +221,7 @@ export default function ConnectionsView() {
           <h1 className="text-[15px] font-bold text-stone-900 tracking-tight">Connections</h1>
           <span className="inline-flex items-center gap-1.5 text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            5/5 Live
+            6/6 Live
           </span>
         </div>
 
@@ -248,8 +275,8 @@ export default function ConnectionsView() {
                 {/* Card Top */}
                 <div className="flex items-center justify-between gap-2 mb-3">
                   <div className="flex items-center gap-2.5">
-                    <div className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 ${service.iconBg}`}>
-                      <IconComp size={18} weight="duotone" className={service.iconColor} />
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${service.iconBg}`}>
+                      <img src={service.icon} alt={service.name} className="w-5 h-5 object-contain mix-blend-multiply" />
                     </div>
                     <div>
                       <h3 className="text-[13px] font-bold text-stone-900 leading-tight">{service.name}</h3>
@@ -289,8 +316,8 @@ export default function ConnectionsView() {
         <div className="p-6 rounded-2xl bg-white border border-stone-200 shadow-sm space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-stone-200">
             <div className="flex items-center gap-3">
-              <div className={`w-9 h-9 rounded-xl border flex items-center justify-center flex-shrink-0 ${currentServiceObj.iconBg}`}>
-                <currentServiceObj.icon size={20} weight="duotone" className={currentServiceObj.iconColor} />
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${currentServiceObj.iconBg}`}>
+                <img src={currentServiceObj.icon} alt={currentServiceObj.name} className="w-5 h-5 object-contain mix-blend-multiply" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
