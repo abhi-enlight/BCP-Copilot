@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "n8n-mcp": {
+      "type": "http",
+      "url": "http://localhost:5678/mcp-server/http",
+      "headers": {
+        "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhNmJhMDAyYS04MGY5LTRmMmItOGRjNS0zMjMxZWE3ZTYxODYiLCJpc3MiOiJuOG4iLCJhdWQiOiJtY3Atc2VydmVyLWFwaSIsImp0aSI6IjdlODBmYWY2LWVkZTctNDRkMS05YTQzLTIyMWZhMGZmN2ZhZSIsImlhdCI6MTc4NzY1ODkzOX0.K7XlxhDd1YzQh6qCa9yEB75v0yhInuqFE1Fm-bHP6ss"
+      }
+    },
+    "ZohoMCP": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://crm-data-metadata-60084835055.zohomcp.in/mcp/be7ca4290b4a1db3854d75cfbb4ae507/message",
+        "--transport",
+        "http-only"
+      ]
+    }
+  }
+}

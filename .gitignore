@@ -1,0 +1,23 @@
+# Environment Variables & Secrets
+.env
+.env*.local
+.env.production
+
+# Dependencies & Build artifacts
+node_modules/
+frontend/node_modules/
+.next/
+frontend/.next/
+frontend/out/
+*.tsbuildinfo
+
+# Local Data & Volumes
+shared_data/
+.freebuff/
+*.log
+.DS_Store
+
+# IDE & Gemini internal artifacts
+.system_generated/
+.tempmediaStorage/
+.user_uploaded/
