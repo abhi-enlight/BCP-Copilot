@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "motion/react";
 import Sidebar, { type NavView } from "@/components/Sidebar";
 import CampaignsView from "@/components/CampaignsView";
 import ConnectionsView from "@/components/ConnectionsView";
-import SettingsView from "@/components/SettingsView";
+import UsersAndRolesView from "@/components/UsersAndRolesView";
 import CopilotView from "@/components/CopilotView";
 
 const pageVariants = {
@@ -61,7 +61,7 @@ export default function App() {
             {currentView === "copilot" && <CopilotView />}
             {currentView === "campaigns" && <CampaignsView />}
             {currentView === "connections" && <ConnectionsView />}
-            {currentView === "settings" && <SettingsView />}
+            {currentView === "users" && <UsersAndRolesView />}
           </motion.div>
         </AnimatePresence>
       </div>

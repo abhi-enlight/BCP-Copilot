@@ -7,12 +7,12 @@ import {
   SidebarSimple,
   Megaphone,
   PlugsConnected,
-  GearSix,
+  Users,
   Buildings,
   Robot,
 } from "@phosphor-icons/react";
 
-export type NavView = "copilot" | "campaigns" | "connections" | "settings";
+export type NavView = "copilot" | "campaigns" | "connections" | "users";
 
 interface SidebarProps {
   currentView: NavView;
@@ -51,9 +51,9 @@ export default function Sidebar({
       badge: "6",
     },
     {
-      id: "settings" as NavView,
-      label: "Settings",
-      icon: GearSix,
+      id: "users" as NavView,
+      label: "Users & Roles",
+      icon: Users,
       badge: null,
     },
   ];
