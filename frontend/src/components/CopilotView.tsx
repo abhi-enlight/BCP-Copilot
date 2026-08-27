@@ -25,6 +25,7 @@ import {
   CaretDown,
   Tag,
   Funnel,
+  Info,
 } from "@phosphor-icons/react";
 import ChatMessage, { type Message } from "@/components/ChatMessage";
 import ChatInput from "@/components/ChatInput";
@@ -137,6 +138,13 @@ export default function CopilotView({
   const [highlightedTaskIds, setHighlightedTaskIds] = useState<string[]>([]);
   const [isAddTaskModalOpen, setIsAddTaskModalOpen] = useState(false);
 
+  // UI Toast Confirmation Banner State
+  const [toastNotice, setToastNotice] = useState<{
+    id: string;
+    text: string;
+    icon?: "check" | "trash" | "user" | "sparkle" | "info";
+  } | null>(null);
+
   // Inline edit state
   const [editingAssigneeTaskId, setEditingAssigneeTaskId] = useState<string | null>(null);
 
@@ -158,6 +166,16 @@ export default function CopilotView({
   const lastProcessedContextRef = useRef<string | null>(null);
 
   const messages = session.messages;
+
+  const showToast = useCallback(
+    (text: string, icon: "check" | "trash" | "user" | "sparkle" | "info" = "check") => {
+      setToastNotice({ id: `toast-${Date.now()}`, text, icon });
+      setTimeout(() => {
+        setToastNotice((prev) => (prev?.text === text ? null : prev));
+      }, 4000);
+    },
+    []
+  );
 
   const scrollToBottom = useCallback((force = false) => {
     if (force || !userHasScrolledUpRef.current) {
@@ -204,7 +222,8 @@ export default function CopilotView({
     newSess.messages = [initialGreeting];
     setSession(newSess);
     userHasScrolledUpRef.current = false;
-  }, [initialPlanContext]);
+    showToast(`Loaded ${initialPlanContext.plan.tasks.length} tasks for ${initialPlanContext.campaignData.name}`, "sparkle");
+  }, [initialPlanContext, showToast]);
 
   // Filtered tasks computation
   const displayedTasks = useMemo(() => {
@@ -244,6 +263,7 @@ export default function CopilotView({
       if (res.ok) {
         const data = await res.json();
         const created = data.campaign as Campaign;
+        const assignedNames = Array.from(new Set(workingPlan.tasks.map((t) => t.assignee))).join(", ");
 
         setWorkingPlan((prev) =>
           prev
@@ -257,11 +277,13 @@ export default function CopilotView({
             : null
         );
 
+        showToast(`Approved & Synced to Zoho Projects (${created.zohoProjectId || "ZP-881290"})`, "check");
+
         // Add confirmation message to chat
         const confirmationMsg: Message = {
           id: `msg-${Date.now()}-assistant`,
           role: "assistant",
-          content: `**Plan Approved and Pushed to Zoho Projects**\n\n* **Zoho Project ID**: \`${created.zohoProjectId || "ZP-881290"}\`\n* **Client**: ${created.client}\n* **Tasks Synchronized**: ${workingPlan.tasks.length} tasks across 4 milestone gates\n* **Sync Status**: Live (REST API sync active, latency: 32ms)\n\nAll assigned SPOCs (${Array.from(new Set(workingPlan.tasks.map((t) => t.assignee))).join(", ")}) have been provisioned in BigCity Portal #81293.`,
+          content: `**Plan Approved and Pushed to Zoho Projects**\n\n* **Zoho Project ID**: \`${created.zohoProjectId || "ZP-881290"}\`\n* **Client**: ${created.client}\n* **Tasks Synchronized**: ${workingPlan.tasks.length} tasks across 4 milestone gates\n* **Sync Status**: Live (REST API sync active, latency: 32ms)\n\nAll assigned SPOCs (${assignedNames}) have been provisioned in BigCity Portal #81293.`,
           timestamp: new Date(),
         };
 
@@ -272,6 +294,7 @@ export default function CopilotView({
       }
     } catch (e) {
       console.error("Failed to push plan to Zoho Projects", e);
+      showToast("Failed to push to Zoho Projects", "info");
     } finally {
       setIsPushingToZoho(false);
     }
@@ -283,6 +306,7 @@ export default function CopilotView({
     updates: Partial<AspectTask>
   ) => {
     if (!workingPlan) return;
+    const task = workingPlan.tasks.find((t) => t.id === taskId);
     setWorkingPlan((prev) => {
       if (!prev) return null;
       return {
@@ -292,11 +316,20 @@ export default function CopilotView({
     });
     setHighlightedTaskIds([taskId]);
     setTimeout(() => setHighlightedTaskIds([]), 3500);
+
+    if (updates.assignee) {
+      showToast(`Reassigned ${task?.sopCode || "Task"} to ${updates.assignee}`, "user");
+    } else if (updates.tat) {
+      showToast(`Updated ${task?.sopCode || "Task"} TAT to ${updates.tat}`, "check");
+    } else if (updates.urgency) {
+      showToast(`Set priority urgency to ${updates.urgency}`, "check");
+    }
   };
 
   // Direct Inline Task Deletion
   const handleDeleteTask = (taskId: string) => {
     if (!workingPlan) return;
+    const task = workingPlan.tasks.find((t) => t.id === taskId);
     setWorkingPlan((prev) => {
       if (!prev) return null;
       return {
@@ -304,6 +337,7 @@ export default function CopilotView({
         tasks: prev.tasks.filter((t) => t.id !== taskId),
       };
     });
+    showToast(`Removed ${task?.sopCode || "task"} from plan`, "trash");
   };
 
   // Handle Add New Task
@@ -342,6 +376,8 @@ export default function CopilotView({
     setHighlightedTaskIds([newTaskId]);
     setTimeout(() => setHighlightedTaskIds([]), 4000);
     setIsAddTaskModalOpen(false);
+    showToast(`Added ${sopCode} — ${newTaskForm.title.trim()}`, "sparkle");
+
     setNewTaskForm({
       title: "",
       aspect: "legal",
@@ -409,6 +445,7 @@ export default function CopilotView({
           // Highlight the modified tasks
           setHighlightedTaskIds(modResult.modifiedTaskIds);
           setTimeout(() => setHighlightedTaskIds([]), 4500);
+          showToast(`Plan updated inline: ${modResult.modifiedTaskIds.length} tasks modified`, "sparkle");
         }
       }
 
@@ -596,7 +633,7 @@ User Request: ${content}`;
         abortRef.current = null;
       }
     },
-    [session.id, workingPlan]
+    [session.id, workingPlan, showToast]
   );
 
   const handleStop = useCallback(() => {
@@ -626,10 +663,41 @@ User Request: ${content}`;
     a.download = `BCP_Assist_Copilot_${Date.now()}.md`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [messages]);
+    showToast("Exported chat session to Markdown", "check");
+  }, [messages, showToast]);
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#FAFAF9] overflow-hidden">
+    <div className="flex-1 flex flex-col h-full bg-[#FAFAF9] overflow-hidden relative">
+      {/* Top Floating Toast Notification */}
+      <AnimatePresence>
+        {toastNotice && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="absolute top-3 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-stone-900 text-white text-xs font-semibold shadow-xl flex items-center gap-2.5 border border-stone-700/80 backdrop-blur-md"
+          >
+            {toastNotice.icon === "trash" ? (
+              <Trash size={14} className="text-rose-400 flex-shrink-0" />
+            ) : toastNotice.icon === "user" ? (
+              <User size={14} className="text-amber-400 flex-shrink-0" />
+            ) : toastNotice.icon === "sparkle" ? (
+              <Sparkle size={14} weight="fill" className="text-amber-400 flex-shrink-0" />
+            ) : (
+              <CheckCircle size={14} weight="fill" className="text-emerald-400 flex-shrink-0" />
+            )}
+            <span>{toastNotice.text}</span>
+            <button
+              type="button"
+              onClick={() => setToastNotice(null)}
+              className="ml-1 text-stone-400 hover:text-white cursor-pointer"
+            >
+              <X size={12} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <header className="h-14 border-b border-stone-200/70 bg-white/90 backdrop-blur-md px-6 flex items-center justify-between flex-shrink-0 z-20">
         <div className="flex items-center gap-3">
@@ -725,12 +793,12 @@ User Request: ${content}`;
               <div className="flex items-center justify-between text-[11px] text-stone-400 px-1 mt-2">
                 <span>
                   {workingPlan && workingPlan.status !== "live" ? (
-                    <>Try: <code className="text-stone-700 bg-stone-100 px-1 py-0.5 rounded font-mono">assign all legal tasks to Akash Verma</code> or <code className="text-stone-700 bg-stone-100 px-1 py-0.5 rounded font-mono">change TAT to 1 day</code></>
+                    <>Try: <code className="text-stone-700 bg-stone-100 px-1 py-0.5 rounded font-mono">assign all legal tasks to Akash Verma</code> or <code className="text-stone-700 bg-stone-100 px-1 py-0.5 rounded font-mono">suggest improvements</code></>
                   ) : (
                     <>Press <kbd className="px-1.5 py-0.5 rounded bg-stone-50 border border-stone-200 text-[10px] text-stone-600 font-mono shadow-xs">Enter ↵</kbd> to send</>
                   )}
                 </span>
-                <span className="font-medium text-stone-500">BCP Assist AI</span>
+                <span className="font-medium text-stone-500">BCP Assist AI (Gemini 3.7)</span>
               </div>
             </div>
           </div>
@@ -796,7 +864,7 @@ User Request: ${content}`;
                     type="button"
                     onClick={handleApprovePlanToZoho}
                     disabled={isPushingToZoho}
-                    className="flex items-center gap-2 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold shadow-sm hover:shadow-md cursor-pointer transition-all active:scale-98"
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold shadow-sm hover:shadow-md cursor-pointer transition-all active:scale-98"
                   >
                     {isPushingToZoho ? (
                       <>

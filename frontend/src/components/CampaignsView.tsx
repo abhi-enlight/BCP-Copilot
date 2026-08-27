@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Megaphone,
@@ -106,6 +106,21 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
   } | null>(null);
 
   const [createdCampaign, setCreatedCampaign] = useState<Campaign | null>(null);
+  const [toastNotice, setToastNotice] = useState<{
+    id: string;
+    text: string;
+    icon?: "check" | "sparkle" | "info";
+  } | null>(null);
+
+  const showToast = useCallback(
+    (text: string, icon: "check" | "sparkle" | "info" = "check") => {
+      setToastNotice({ id: `toast-${Date.now()}`, text, icon });
+      setTimeout(() => {
+        setToastNotice((prev) => (prev?.text === text ? null : prev));
+      }, 4000);
+    },
+    []
+  );
 
   const demoPresets = [
     {
@@ -181,6 +196,7 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
           },
         ]);
         setWizardStep("plan_review");
+        showToast(`AI generated 4-aspect plan with ${plan.tasks.length} tasks`, "sparkle");
       }, 500);
     } catch {
       clearInterval(interval);
@@ -195,6 +211,7 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
         },
       ]);
       setWizardStep("plan_review");
+      showToast(`AI generated 4-aspect plan with ${plan.tasks.length} tasks`, "sparkle");
     }
   };
 
@@ -223,6 +240,7 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
             : null
         );
         setFormData(modResult.updatedCampaignData);
+        showToast(`Plan updated inline: ${modResult.modifiedTaskIds.length} tasks modified`, "sparkle");
 
         const assistantMsg: Message = {
           id: `msg-${Date.now()}-assistant`,
@@ -258,10 +276,12 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
           setCreatedCampaign(data.campaign);
           setCampaigns((prev) => [data.campaign, ...prev]);
           setWizardStep("push_success");
+          showToast(`Approved & Synced to Zoho Projects (${data.campaign.zohoProjectId || "ZP-881290"})`, "check");
         }
       }, 1200);
     } catch (e) {
       console.error("Failed to push to Zoho", e);
+      showToast("Failed to push to Zoho Projects", "info");
     }
   };
 
@@ -311,7 +331,33 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#FAFAF9]">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#FAFAF9] relative">
+      {/* Top Floating Toast Notification */}
+      <AnimatePresence>
+        {toastNotice && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="absolute top-3 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-stone-900 text-white text-xs font-semibold shadow-xl flex items-center gap-2.5 border border-stone-700/80 backdrop-blur-md"
+          >
+            {toastNotice.icon === "sparkle" ? (
+              <Sparkle size={14} weight="fill" className="text-amber-400 flex-shrink-0" />
+            ) : (
+              <CheckCircle size={14} weight="fill" className="text-emerald-400 flex-shrink-0" />
+            )}
+            <span>{toastNotice.text}</span>
+            <button
+              type="button"
+              onClick={() => setToastNotice(null)}
+              className="ml-1 text-stone-400 hover:text-white cursor-pointer"
+            >
+              <X size={12} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Top Header */}
       <header className="h-14 border-b border-stone-200/70 bg-white/90 backdrop-blur-md px-6 flex items-center justify-between flex-shrink-0 z-20">
         <div className="flex items-center gap-3">
