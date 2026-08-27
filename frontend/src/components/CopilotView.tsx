@@ -347,9 +347,10 @@ User Request: ${content}`;
           let firstChunkReceived = false;
           const decoder = new TextDecoder();
           let buffer = "";
+          let streamEnded = false;
 
           try {
-            while (true) {
+            while (!streamEnded) {
               const { done, value } = await reader.read();
               if (done) break;
 
@@ -360,7 +361,10 @@ User Request: ${content}`;
               for (const line of lines) {
                 if (!line.startsWith("data: ")) continue;
                 const data = line.slice(6).trim();
-                if (data === "[DONE]") break;
+                if (data === "[DONE]") {
+                  streamEnded = true;
+                  break;
+                }
 
                 let token = "";
                 try {

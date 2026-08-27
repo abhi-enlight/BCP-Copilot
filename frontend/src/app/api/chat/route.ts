@@ -9,10 +9,6 @@ interface ChatRequestBody {
 }
 
 export async function POST(request: NextRequest) {
-  const N8N_WEBHOOK_URL =
-    process.env.N8N_WEBHOOK_URL ||
-    "http://localhost:5678/webhook/db9f5c37-f5d5-4581-9ca6-74e2221ef5e4/chat";
-
   try {
     const body: ChatRequestBody = await request.json();
     const { message, sessionId } = body;
@@ -24,34 +20,46 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const N8N_URLS = [
+      process.env.N8N_WEBHOOK_URL,
+      "http://localhost:5678/webhook/db9f5c37-f5d5-4581-9ca6-74e2221ef5e4/chat",
+      "http://127.0.0.1:5678/webhook/db9f5c37-f5d5-4581-9ca6-74e2221ef5e4/chat",
+    ].filter(Boolean) as string[];
+
+    let response: Response | null = null;
+    let lastError: Error | null = null;
+
     const payload = {
       action: "sendMessage",
       chatInput: message,
       sessionId: sessionId || `web-${Date.now()}`,
     };
 
-    const response = await fetch(N8N_WEBHOOK_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json, text/event-stream, text/plain, */*",
-        "ngrok-skip-browser-warning": "69420",
-        "Bypass-Tunnel-Reminder": "true",
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(120_000),
-    });
+    for (const url of N8N_URLS) {
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream, text/plain, */*",
+            "ngrok-skip-browser-warning": "69420",
+            "Bypass-Tunnel-Reminder": "true",
+          },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(60_000),
+        });
 
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => "Unknown error");
-      console.error(`n8n webhook error (${response.status}):`, errorText);
-      return NextResponse.json(
-        {
-          error: `n8n returned ${response.status}`,
-          detail: errorText,
-        },
-        { status: 502 }
-      );
+        if (res.ok) {
+          response = res;
+          break;
+        }
+      } catch (err) {
+        lastError = err as Error;
+      }
+    }
+
+    if (!response) {
+      throw lastError || new Error("Could not connect to n8n workflow at port 5678");
     }
 
     const contentType = response.headers.get("content-type") || "";
@@ -76,14 +84,14 @@ export async function POST(request: NextRequest) {
         async start(controller) {
           const decoder = new TextDecoder();
           let buffer = "";
+          let streamEnded = false;
 
           try {
-            while (true) {
+            while (!streamEnded) {
               const { done, value } = await reader.read();
               if (done) break;
 
               buffer += decoder.decode(value, { stream: true });
-
               const lines = buffer.split("\n");
               buffer = lines.pop() || "";
 
@@ -92,10 +100,11 @@ export async function POST(request: NextRequest) {
                 if (!trimmed) continue;
 
                 if (trimmed.startsWith("data: ")) {
-                  const data = trimmed.slice(6);
+                  const data = trimmed.slice(6).trim();
                   if (data === "[DONE]") {
                     controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-                    continue;
+                    streamEnded = true;
+                    break;
                   }
                   try {
                     const parsed = JSON.parse(data);
@@ -132,6 +141,8 @@ export async function POST(request: NextRequest) {
                       );
                     } else if (parsed.type === "end") {
                       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+                      streamEnded = true;
+                      break;
                     } else if (parsed.output || parsed.text || parsed.content) {
                       const text = parsed.output || parsed.text || parsed.content;
                       controller.enqueue(
@@ -153,7 +164,7 @@ export async function POST(request: NextRequest) {
             }
 
             // Process remaining buffer
-            if (buffer.trim()) {
+            if (!streamEnded && buffer.trim()) {
               try {
                 const parsed = JSON.parse(buffer.trim());
                 const text = parsed.content || parsed.output || parsed.text || "";
@@ -170,11 +181,16 @@ export async function POST(request: NextRequest) {
                 }
               }
             }
-            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+
+            if (!streamEnded) {
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            }
           } catch (err) {
             console.error("Stream processing error:", err);
           } finally {
-            controller.close();
+            try {
+              controller.close();
+            } catch {}
           }
         },
       });
