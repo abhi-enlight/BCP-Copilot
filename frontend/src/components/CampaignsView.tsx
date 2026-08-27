@@ -166,11 +166,15 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
       setTimeout(() => {
         const plan = data.plan || generateAspectPlan(formData);
         setGeneratedPlan(plan);
+        const initialAssistantContent = data.aiAnalysis
+          ? `I've analyzed **${formData.name}** and generated the 4-aspect plan:\n\n${data.aiAnalysis}\n\nYou can review all tasks on the left. Let me know if you'd like to refine any deadlines or add specific requirements.`
+          : "I've drafted a 4-aspect plan based on your inputs. You can review the tasks on the left. Let me know if you need to add, remove, or modify any tasks before we push to Zoho Projects.";
+
         setChatMessages([
           {
             id: `msg-${Date.now()}-assistant`,
             role: "assistant",
-            content: "I've drafted a 4-aspect plan based on your inputs. You can review the tasks on the left. Let me know if you need to add, remove, or modify any tasks before we push to Zoho Projects.",
+            content: initialAssistantContent,
             timestamp: new Date(),
           },
         ]);
@@ -758,15 +762,8 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                                     <span className="text-[13px] font-semibold text-stone-900 block truncate">
                                       {task.title}
                                     </span>
-                                    {task.mandatoryGate && (
-                                      <span className="text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-px rounded flex-shrink-0">
-                                        Mandatory Gate
-                                      </span>
-                                    )}
                                   </div>
                                   <div className="flex items-center gap-2 text-[10.5px] text-stone-500">
-                                    <span className="font-mono text-stone-400">{task.sopCode}</span>
-                                    <Dot size={8} className="text-stone-300" />
                                     <span className={`font-semibold ${meta.light}`}>{meta.label}</span>
                                     <Dot size={8} className="text-stone-300" />
                                     <span className="flex items-center gap-1">
@@ -774,14 +771,6 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                                       {task.assignee}
                                       {task.role ? ` (${task.role})` : ""}
                                     </span>
-                                    {task.verificationRequirement && (
-                                      <>
-                                        <Dot size={8} className="text-stone-300 hidden md:inline" />
-                                        <span className="text-stone-400 truncate hidden md:inline">
-                                          Verification: {task.verificationRequirement}
-                                        </span>
-                                      </>
-                                    )}
                                   </div>
                                 </div>
 

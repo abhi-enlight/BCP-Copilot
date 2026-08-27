@@ -10,7 +10,10 @@ import {
   Users,
   Buildings,
   Robot,
+  User,
 } from "@phosphor-icons/react";
+
+import BigCityLogo from "./BigCityLogo";
 
 export type NavView = "copilot" | "campaigns" | "connections" | "users";
 
@@ -85,10 +88,10 @@ export default function Sidebar({
       >
         {/* Brand Header */}
         <div className={`h-14 border-b border-stone-200/70 flex items-center flex-shrink-0 transition-all ${isCollapsed ? "justify-center px-0" : "justify-between px-4"}`}>
-          {!isCollapsed && (
+          {!isCollapsed ? (
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-stone-800 to-stone-900 flex items-center justify-center flex-shrink-0 shadow-sm">
-                <Sparkle size={16} weight="fill" className="text-amber-400" />
+              <div className="flex items-center justify-center flex-shrink-0">
+                <BigCityLogo size={32} className="shadow-xs rounded-lg" />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
@@ -97,10 +100,13 @@ export default function Sidebar({
                   </span>
                 </div>
                 <div className="flex items-center gap-1 mt-px">
-                  <Buildings size={10} className="text-stone-400 flex-shrink-0" />
                   <span className="text-[11px] text-stone-400 truncate font-medium">BigCity Promotions</span>
                 </div>
               </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center">
+              <BigCityLogo size={30} className="shadow-xs rounded-lg" />
             </div>
           )}
 
@@ -176,11 +182,9 @@ export default function Sidebar({
         {/* User Profile */}
         <div className="p-3 border-t border-stone-200/70">
           <div className="flex items-center gap-2.5 px-1">
-            <img 
-              src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=facearea&facepad=2&w=256&h=256&q=80" 
-              alt="Rohit Sharma" 
-              className="w-8 h-8 rounded-xl object-cover flex-shrink-0 shadow-sm border border-stone-200"
-            />
+            <div className="w-8 h-8 rounded-xl bg-stone-100 border border-stone-200 flex items-center justify-center text-stone-400 flex-shrink-0 shadow-2xs">
+              <User size={16} weight="duotone" className="text-stone-500" />
+            </div>
             {!isCollapsed && (
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">

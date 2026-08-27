@@ -16,6 +16,11 @@ export const metadata: Metadata = {
   title: "BCP Assist - AI Campaign Expert",
   description:
     "Your AI-powered campaign co-pilot for BigCity Promotions. Plan, execute, and monitor marketing campaigns with intelligent assistance.",
+  icons: {
+    icon: "/bigcity-logo-clean.png",
+    shortcut: "/bigcity-logo-clean.png",
+    apple: "/bigcity-logo-clean.png",
+  },
 };
 
 export default function RootLayout({

@@ -349,15 +349,8 @@ export default function ZohoProjectsDrawer({
                               >
                                 {task.title}
                               </span>
-                              {task.mandatoryGate && !isDone && (
-                                <span className="text-[9px] font-bold text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-px rounded flex-shrink-0">
-                                  Gate
-                                </span>
-                              )}
                             </div>
                             <div className="flex items-center gap-2 mt-0.5">
-                              <span className="text-[10px] font-mono text-stone-400">{task.sopCode}</span>
-                              <Dot size={8} className="text-stone-300" />
                               <span className={`text-[10px] font-semibold ${meta.light}`}>{meta.label}</span>
                               <Dot size={8} className="text-stone-300" />
                               <span className="text-[10px] text-stone-400 truncate">{task.assignee}</span>
@@ -399,12 +392,6 @@ export default function ZohoProjectsDrawer({
                                     TAT: <strong>{task.tat}</strong>
                                   </span>
                                 </div>
-                                {task.verificationRequirement && (
-                                  <div className="pt-1.5 border-t border-stone-200/60 text-stone-600">
-                                    <span className="font-semibold text-stone-700">Verification: </span>
-                                    {task.verificationRequirement}
-                                  </div>
-                                )}
                               </div>
                             </motion.div>
                           )}

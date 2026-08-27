@@ -11,7 +11,7 @@ interface ChatRequestBody {
 export async function POST(request: NextRequest) {
   const N8N_WEBHOOK_URL =
     process.env.N8N_WEBHOOK_URL ||
-    "https://192b-103-216-214-34.ngrok-free.app/webhook/db9f5c37-f5d5-4581-9ca6-74e2221ef5e4/chat";
+    "http://localhost:5678/webhook/db9f5c37-f5d5-4581-9ca6-74e2221ef5e4/chat";
 
   try {
     const body: ChatRequestBody = await request.json();

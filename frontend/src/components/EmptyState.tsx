@@ -2,12 +2,12 @@
 
 import { motion } from "motion/react";
 import {
-  Sparkle,
-  Database,
-  ShieldCheck,
-  Brain,
+  Megaphone,
   QrCode,
+  Gift,
+  Coffee,
 } from "@phosphor-icons/react";
+import BigCityLogo from "./BigCityLogo";
 
 interface EmptyStateProps {
   onSelectPrompt?: (suggestion: string) => void;
@@ -17,39 +17,39 @@ interface EmptyStateProps {
 const suggestions = [
   {
     icon: QrCode,
-    label: "Nestle QR Brief",
-    tag: "High Volume OTP",
+    label: "Nestlé Festive Scratch & Win",
+    tag: "FMCG · QR Codes",
     color: "text-amber-600",
     bg: "bg-amber-50",
     border: "border-amber-200",
-    text: "We are launching the Nestle Festive Scratch & Win with 100k on-pack QR codes. What historical risks and OTP fallbacks should we prepare?",
+    text: "Create a 4-aspect campaign plan for Nestlé Festive Scratch & Win with 100k on-pack QR codes and ₹25 Lakh budget.",
   },
   {
-    icon: Database,
-    label: "Zoho CRM Live Query",
-    tag: "Live Deals",
-    color: "text-sky-600",
-    bg: "bg-sky-50",
-    border: "border-sky-200",
-    text: "What are our active deals and highest-value campaigns currently logged in Zoho CRM?",
-  },
-  {
-    icon: Brain,
-    label: "BigCity SOP Matrix",
-    tag: "34 SOP Tasks",
-    color: "text-indigo-600",
-    bg: "bg-indigo-50",
-    border: "border-indigo-200",
-    text: "What is the mandatory BigCity SOP checklist and SPOC ownership for campaign setup, server provisioning, and 72h UAT testing?",
-  },
-  {
-    icon: ShieldCheck,
-    label: "SOW Policy Guard",
-    tag: "Human Sign-Off",
+    icon: Megaphone,
+    label: "Cadbury Silk Valentine Cashback",
+    tag: "Cashback · UPI Pool",
     color: "text-rose-600",
     bg: "bg-rose-50",
     border: "border-rose-200",
-    text: "A client requested a ₹10 Lakh budget increase and change in prize pool mechanics. How does BCP Assist handle this?",
+    text: "Plan Mondelez Cadbury Silk Valentine's ₹100 Assured Cashback campaign with 350,000 packs and UPI escrow.",
+  },
+  {
+    icon: Gift,
+    label: "Pepsi UEFA Zomato Dining Pass",
+    tag: "EGV · Dining Voucher",
+    color: "text-sky-600",
+    bg: "bg-sky-50",
+    border: "border-sky-200",
+    text: "Generate a campaign launch plan for Pepsi UEFA Champions League ₹200 Zomato Dining Pass with 500,000 cans.",
+  },
+  {
+    icon: Coffee,
+    label: "Tata Tea Gold Amazon Reward",
+    tag: "EGV · ₹20L Budget",
+    color: "text-emerald-600",
+    bg: "bg-emerald-50",
+    border: "border-emerald-200",
+    text: "Create a milestone execution plan for Tata Tea Gold ₹50 Amazon Pay Assured Reward campaign for 200k packs.",
   },
 ];
 
@@ -68,8 +68,9 @@ export default function EmptyState({ onSelectPrompt, onSuggestionClick }: EmptyS
         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
         className="relative mb-6"
       >
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 ring-4 ring-indigo-50">
-          <Sparkle size={30} weight="fill" />
+        <div className="relative flex items-center justify-center">
+          <div className="absolute inset-0 rounded-2xl bg-amber-500/20 blur-xl scale-125" />
+          <BigCityLogo size={64} className="relative shadow-lg rounded-2xl" />
         </div>
       </motion.div>
 
@@ -84,8 +85,7 @@ export default function EmptyState({ onSelectPrompt, onSuggestionClick }: EmptyS
           BCP Assist Campaign Intelligence
         </h2>
         <p className="text-[13px] text-slate-600 max-w-md mx-auto leading-relaxed">
-          Powered by <strong className="text-slate-900 font-semibold">Google Gemini 3.7 Flash</strong>,{" "}
-          <strong className="text-slate-900 font-semibold">Supabase pgvector</strong> SOP memory, and live{" "}
+          Powered by <strong className="text-slate-900 font-semibold">Supabase pgvector</strong> SOP memory, and live{" "}
           <strong className="text-slate-900 font-semibold">Zoho CRM Suite</strong> integration.
         </p>
       </motion.div>

@@ -7,6 +7,7 @@ import {
   Crown,
   Briefcase,
   Scales,
+  Megaphone,
   MagnifyingGlass,
   Check,
   X,
@@ -18,7 +19,7 @@ import {
   DotsThree,
 } from "@phosphor-icons/react";
 
-export type RoleType = "Admin" | "Project Manager" | "Legal";
+export type RoleType = "Admin" | "Campaign Manager" | "Project Manager" | "Legal";
 
 export interface BigCityUser {
   id: string;
@@ -59,18 +60,18 @@ const INITIAL_USERS: BigCityUser[] = [
     id: "usr-3",
     name: "Vikram Mehta",
     email: "vikram.mehta@bigcity.in",
-    role: "Project Manager",
+    role: "Campaign Manager",
     department: "FMCG Brand Campaigns",
     status: "active_now",
     lastActive: "Active now",
     initials: "VM",
-    avatarColor: "from-emerald-600 to-emerald-800",
+    avatarColor: "from-indigo-600 to-indigo-800",
   },
   {
     id: "usr-4",
     name: "Ananya Deshmukh",
     email: "ananya.deshmukh@bigcity.in",
-    role: "Project Manager",
+    role: "Campaign Manager",
     department: "Consumer Electronics",
     status: "active",
     lastActive: "1h ago",
@@ -140,6 +141,13 @@ const ROLE_META: Record<
     border: "border-stone-700",
     dot: "bg-stone-400",
   },
+  "Campaign Manager": {
+    icon: Megaphone,
+    bg: "bg-indigo-50",
+    text: "text-indigo-800",
+    border: "border-indigo-200",
+    dot: "bg-indigo-500",
+  },
   "Project Manager": {
     icon: Briefcase,
     bg: "bg-emerald-50",
@@ -196,6 +204,7 @@ export default function UsersAndRolesView({ onUserCountChange }: UsersAndRolesVi
   const counts = useMemo(() => ({
     all: users.length,
     admin: users.filter((u) => u.role === "Admin").length,
+    cm: users.filter((u) => u.role === "Campaign Manager").length,
     pm: users.filter((u) => u.role === "Project Manager").length,
     legal: users.filter((u) => u.role === "Legal").length,
   }), [users]);
@@ -276,7 +285,7 @@ export default function UsersAndRolesView({ onUserCountChange }: UsersAndRolesVi
     setIsInviteModalOpen(false);
     setInviteName("");
     setInviteEmailPrefix("");
-    setInviteRole("Project Manager");
+    setInviteRole("Campaign Manager");
     setInviteDepartment("Campaign Operations");
     showToast(`Invited ${newUser.name}`);
   };
@@ -284,6 +293,7 @@ export default function UsersAndRolesView({ onUserCountChange }: UsersAndRolesVi
   const filterTabs = [
     { key: "All" as const, label: "All", count: counts.all },
     { key: "Admin" as const, label: "Admins", count: counts.admin },
+    { key: "Campaign Manager" as const, label: "Campaign Managers", count: counts.cm },
     { key: "Project Manager" as const, label: "PMs", count: counts.pm },
     { key: "Legal" as const, label: "Legal", count: counts.legal },
   ];
@@ -450,7 +460,7 @@ export default function UsersAndRolesView({ onUserCountChange }: UsersAndRolesVi
                           transition={{ duration: 0.1 }}
                           className="absolute right-0 top-full mt-1 w-44 rounded-xl bg-white border border-stone-200 shadow-lg p-1 z-30"
                         >
-                          {(["Admin", "Project Manager", "Legal"] as RoleType[]).map((r) => {
+                          {(["Admin", "Campaign Manager", "Project Manager", "Legal"] as RoleType[]).map((r) => {
                             const meta = ROLE_META[r];
                             const Icon = meta.icon;
                             const isCurrent = user.role === r;
@@ -589,8 +599,8 @@ export default function UsersAndRolesView({ onUserCountChange }: UsersAndRolesVi
                 {/* Role */}
                 <div>
                   <label className="block text-[11px] font-semibold text-stone-600 mb-1.5">Role</label>
-                  <div className="flex gap-2">
-                    {(["Admin", "Project Manager", "Legal"] as RoleType[]).map((r) => {
+                  <div className="grid grid-cols-2 gap-2">
+                    {(["Admin", "Campaign Manager", "Project Manager", "Legal"] as RoleType[]).map((r) => {
                       const meta = ROLE_META[r];
                       const Icon = meta.icon;
                       const isChecked = inviteRole === r;
@@ -599,14 +609,14 @@ export default function UsersAndRolesView({ onUserCountChange }: UsersAndRolesVi
                           key={r}
                           type="button"
                           onClick={() => setInviteRole(r)}
-                          className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
+                          className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
                             isChecked
                               ? "bg-stone-900 text-white border-stone-700"
                               : "bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100"
                           }`}
                         >
                           <Icon size={13} weight={isChecked ? "fill" : "bold"} />
-                          <span>{r === "Project Manager" ? "PM" : r}</span>
+                          <span>{r === "Campaign Manager" ? "Campaign Mgr" : r === "Project Manager" ? "PM" : r}</span>
                         </button>
                       );
                     })}

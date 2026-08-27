@@ -633,10 +633,53 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Campaign data is required" }, { status: 400 });
       }
 
+      // Generate the structured aspect breakdown
       const { tasks, aspectSummary } = generateAspectPlan(campaignInput);
+
+      // Attempt to invoke the live n8n AI workflow for AI insights / risk review
+      let aiAnalysisText = "";
+      const N8N_WEBHOOK_URL =
+        process.env.N8N_WEBHOOK_URL ||
+        "http://localhost:5678/webhook/db9f5c37-f5d5-4581-9ca6-74e2221ef5e4/chat";
+
+      try {
+        const aiPrompt = `Please analyze and generate a 4-aspect campaign plan (Legal, Compliance, Accounting, Implementation) for:
+Campaign: ${campaignInput.name}
+Client: ${campaignInput.client}
+Category: ${campaignInput.category || "FMCG"}
+Reward Mechanism: ${campaignInput.rewardType}
+Budget: ${campaignInput.budget}
+Code/Pack Volume: ${campaignInput.codeVolume}
+Brief: ${campaignInput.brief || "Standard promotional campaign"}`;
+
+        const n8nRes = await fetch(N8N_WEBHOOK_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/plain, */*",
+            "ngrok-skip-browser-warning": "69420",
+          },
+          body: JSON.stringify({
+            action: "sendMessage",
+            chatInput: aiPrompt,
+            sessionId: `plan-gen-${Date.now()}`,
+          }),
+          signal: AbortSignal.timeout(6000),
+        });
+
+        if (n8nRes.ok) {
+          const resText = await n8nRes.text();
+          if (resText && !resText.includes("error")) {
+            aiAnalysisText = resText;
+          }
+        }
+      } catch (err) {
+        // Fallback gracefully without blocking the user
+      }
 
       return NextResponse.json({
         success: true,
+        aiAnalysis: aiAnalysisText || undefined,
         plan: {
           tasks,
           aspectSummary,

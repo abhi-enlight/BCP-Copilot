@@ -174,32 +174,7 @@ export default function ConnectionsView() {
         "Draft and send SOWs for partner sign-off",
       ],
     },
-    {
-      id: "gemini",
-      name: "Gemini 3.7 Flash",
-      category: "LLM Reasoning Engine",
-      status: "active",
-      statusLabel: "Active",
-      statusColor: "bg-violet-50 text-violet-700 border-violet-200",
-      readWriteMode: "Inference",
-      icon: "https://cdn.simpleicons.org/google/4285F4",
-      iconBg: "bg-violet-50 border-violet-200",
-      iconColor: "text-violet-600",
-      metrics: [
-        { label: "Model", value: "gemini-3.7-flash" },
-        { label: "Temperature", value: "0.3" },
-        { label: "Speed", value: "185ms" },
-        { label: "Context", value: "1M tokens" },
-      ],
-      endpoint: "https://generativelanguage.googleapis.com/v1beta",
-      authMethod: "Google AI Studio API Key",
-      lastPing: "Just now (HTTP 200)",
-      capabilities: [
-        "Decompose brief into Legal, Compliance, Accounting & Tech",
-        "Assess SOW policy risks and human sign-off boundaries",
-        "Generate actionable Zoho project milestone plans",
-      ],
-    },
+
   ];
 
   const handlePingAll = () => {
@@ -303,9 +278,6 @@ export default function ConnectionsView() {
                 {/* Footer */}
                 <div className="mt-3 pt-3 border-t border-stone-100 flex items-center justify-between text-[11px] text-stone-400">
                   <span className="font-mono">{service.readWriteMode}</span>
-                  {isSelected && (
-                    <span className="text-amber-600 font-semibold text-[10px]">Inspecting ↓</span>
-                  )}
                 </div>
               </motion.div>
             );

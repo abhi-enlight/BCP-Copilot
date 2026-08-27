@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   Database,
   Brain,
-  Cpu,
   CheckCircle,
   Lightning,
   CaretDown,
@@ -107,21 +106,6 @@ export const INTEGRATIONS_LIST: IntegrationItem[] = [
     border: "border-sky-200",
     badgeBg: "bg-sky-100",
     badgeText: "text-sky-800",
-  },
-  {
-    id: "gemini",
-    name: "Google Gemini 3.7 Flash",
-    shortName: "Gemini 3.7",
-    category: "LLM Reasoning Engine",
-    status: "active",
-    metric: "Active",
-    detail: "AI 4-Aspect Decomposition (Legal, Compliance, Accounting, Implementation)",
-    icon: Cpu,
-    color: "text-indigo-700",
-    bg: "bg-indigo-50/80",
-    border: "border-indigo-200",
-    badgeBg: "bg-indigo-100",
-    badgeText: "text-indigo-800",
   },
 ];
 
