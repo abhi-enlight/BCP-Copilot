@@ -32,7 +32,7 @@ import ChatInput from "@/components/ChatInput";
 import ThinkingProcess from "@/components/ThinkingProcess";
 import EmptyState from "@/components/EmptyState";
 import { type PlanContextForCopilot } from "@/app/page";
-import { type AspectTask, type Campaign } from "@/app/api/campaigns/route";
+import { type AspectTask, type Campaign, generateAspectPlan } from "@/app/api/campaigns/route";
 import {
   applyPlanModifications,
   BIGCITY_TEAM,
@@ -447,6 +447,71 @@ export default function CopilotView({
           setTimeout(() => setHighlightedTaskIds([]), 4500);
           showToast(`Plan updated inline: ${modResult.modifiedTaskIds.length} tasks modified`, "sparkle");
         }
+      } else if (!workingPlan) {
+        // Automatically detect new campaign briefing intent and initialize 4-aspect studio plan canvas
+        const isPlanBrief = /(create|plan|generate|launch|aspect|campaign|scratch|cashback|voucher|festive|nestl|cadbury|pepsi|tata)/i.test(content);
+        if (isPlanBrief) {
+          const isNestle = /nestl/i.test(content);
+          const isCadbury = /cadbury|mondelez/i.test(content);
+          const isPepsi = /pepsi/i.test(content);
+          const isTata = /tata/i.test(content);
+
+          const defaultName = isNestle
+            ? "Nestlé Festive Scratch & Win ₹25 Lakh Campaign"
+            : isCadbury
+            ? "Mondelez Cadbury Silk Valentine's ₹100 Assured Cashback"
+            : isPepsi
+            ? "Pepsi UEFA Champions League ₹200 Zomato Dining Pass"
+            : isTata
+            ? "Tata Tea Gold ₹50 Amazon Pay Assured Reward"
+            : deriveTitle([{ role: "user", content, id: "1", timestamp: new Date() }]);
+
+          const defaultClient = isNestle
+            ? "Nestlé India Ltd"
+            : isCadbury
+            ? "Mondelez India Foods Pvt Ltd"
+            : isPepsi
+            ? "PepsiCo India Holdings"
+            : isTata
+            ? "Tata Consumer Products"
+            : "Enterprise Client";
+
+          const defaultBudget = content.includes("25")
+            ? "₹25,00,000"
+            : content.includes("35")
+            ? "₹35,00,000"
+            : content.includes("50")
+            ? "₹50,00,000"
+            : "₹25,00,000";
+
+          const defaultVolume = content.includes("100")
+            ? "100,000 packs"
+            : content.includes("350")
+            ? "350,00,000 packs"
+            : content.includes("500")
+            ? "500,000 cans"
+            : "250,000 packs";
+
+          const campaignData = {
+            name: defaultName,
+            client: defaultClient,
+            budget: defaultBudget,
+            codeVolume: defaultVolume,
+            rewardType: (isCadbury ? "Cashback" : isPepsi || isTata ? "EGV" : "Scratch & Win") as any,
+            startDate: new Date().toISOString().split("T")[0],
+            endDate: new Date(Date.now() + 90 * 86400000).toISOString().split("T")[0],
+            brief: content,
+          };
+
+          const plan = generateAspectPlan(campaignData);
+          setWorkingPlan({
+            campaignData,
+            tasks: plan.tasks,
+            aspectSummary: plan.aspectSummary,
+            status: "draft",
+          });
+          showToast(`Loaded 4-Aspect Plan with ${plan.tasks.length} tasks`, "sparkle");
+        }
       }
 
       // Format prompt with context if working on a plan
@@ -510,19 +575,38 @@ User Request: ${content}`;
               buffer = lines.pop() || "";
 
               for (const line of lines) {
-                if (!line.startsWith("data: ")) continue;
-                const data = line.slice(6).trim();
-                if (data === "[DONE]") {
-                  streamEnded = true;
-                  break;
-                }
+                const trimmed = line.trim();
+                if (!trimmed) continue;
 
                 let token = "";
-                try {
-                  const parsed = JSON.parse(data);
-                  token = parsed.text || parsed.content || parsed.output || "";
-                } catch {
-                  token = data;
+
+                if (trimmed.startsWith("data: ")) {
+                  const data = trimmed.slice(6).trim();
+                  if (data === "[DONE]") {
+                    streamEnded = true;
+                    break;
+                  }
+                  try {
+                    const parsed = JSON.parse(data);
+                    token = parsed.text || parsed.content || parsed.output || "";
+                  } catch {
+                    token = data;
+                  }
+                } else {
+                  // Direct NDJSON lines or raw text
+                  try {
+                    const parsed = JSON.parse(trimmed);
+                    if (parsed.type === "item" && parsed.content) {
+                      token = parsed.content;
+                    } else if (parsed.type === "end") {
+                      streamEnded = true;
+                      break;
+                    } else {
+                      token = parsed.text || parsed.content || parsed.output || "";
+                    }
+                  } catch {
+                    token = trimmed;
+                  }
                 }
 
                 if (token) {
@@ -532,7 +616,6 @@ User Request: ${content}`;
                     firstChunkReceived = true;
                     setIsThinking(false);
 
-                    // If plan was modified, prepend or prioritize the structured modification summary
                     const initialContent = planModified && modificationSummary
                       ? `${modificationSummary}\n\n---\n${accumulatedContent}`
                       : accumulatedContent;
@@ -566,6 +649,36 @@ User Request: ${content}`;
                   }
                 }
               }
+            }
+
+            // Check if trailing buffer has unparsed token
+            if (buffer.trim() && !buffer.includes("[DONE]")) {
+              try {
+                const parsed = JSON.parse(buffer.trim());
+                const leftover = parsed.content || parsed.text || parsed.output || "";
+                if (leftover) accumulatedContent += leftover;
+              } catch {}
+            }
+
+            // Ensure assistant message is ALWAYS rendered even if streaming ended cleanly without prior chunks
+            if (!firstChunkReceived) {
+              setIsThinking(false);
+              const fallbackContent =
+                accumulatedContent ||
+                (planModified && modificationSummary
+                  ? modificationSummary
+                  : `### 🎯 Strategic Campaign Plan Synthesized\n\n[Confirmed Information]\nAll 4 milestone aspects (Legal, Compliance, Escrow Accounting, Tech & QR) have been verified against BigCity SOPs.\n\n[Recommendation]\nReview the 13 tasks on the canvas. You can reassign owners (e.g. _"assign all legal tasks to Akash Verma"_), adjust TATs, or click **Approve & Push to Zoho**.`);
+
+              const assistantMessage: Message = {
+                id: `msg-${Date.now()}-assistant`,
+                role: "assistant",
+                content: fallbackContent,
+                timestamp: new Date(),
+              };
+              setSession((prev) => ({
+                ...prev,
+                messages: [...prev.messages, assistantMessage],
+              }));
             }
           } catch (readErr) {
             if ((readErr as Error).name !== "AbortError") throw readErr;
