@@ -495,9 +495,10 @@ export default function CopilotView({
           const campaignData = {
             name: defaultName,
             client: defaultClient,
+            category: "FMCG",
             budget: defaultBudget,
             codeVolume: defaultVolume,
-            rewardType: (isCadbury ? "Cashback" : isPepsi || isTata ? "EGV" : "Scratch & Win") as any,
+            rewardType: isCadbury ? "Cashback" : isPepsi || isTata ? "EGV" : "Scratch & Win",
             startDate: new Date().toISOString().split("T")[0],
             endDate: new Date(Date.now() + 90 * 86400000).toISOString().split("T")[0],
             brief: content,

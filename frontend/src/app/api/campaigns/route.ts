@@ -336,13 +336,13 @@ export const INITIAL_CAMPAIGNS: Campaign[] = [
 export function generateAspectPlan(campaignInput: {
   name: string;
   client: string;
-  category: string;
-  rewardType: string;
-  budget: string;
-  codeVolume: string;
-  startDate: string;
-  endDate: string;
-  brief: string;
+  category?: string;
+  rewardType?: string;
+  budget?: string;
+  codeVolume?: string;
+  startDate?: string;
+  endDate?: string;
+  brief?: string;
 }): { tasks: AspectTask[]; aspectSummary: Campaign["aspectSummary"] } {
   const isCashback = campaignInput.rewardType === "Cashback";
   const isVoucher = campaignInput.rewardType === "EGV";
