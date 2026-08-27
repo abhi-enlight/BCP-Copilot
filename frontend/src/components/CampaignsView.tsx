@@ -20,15 +20,59 @@ import {
   Buildings,
   Lightning,
   CaretRight,
+  Dot,
 } from "@phosphor-icons/react";
 import { type Campaign, type AspectTask, INITIAL_CAMPAIGNS, generateAspectPlan } from "@/app/api/campaigns/route";
 import ZohoProjectsDrawer from "./ZohoProjectsDrawer";
+import ChatMessage, { type Message } from "@/components/ChatMessage";
+import ChatInput from "@/components/ChatInput";
+import ThinkingProcess from "@/components/ThinkingProcess";
+
+const ASPECT_META = {
+  legal: {
+    icon: Scales,
+    label: "Legal",
+    accent: "bg-violet-500",
+    light: "text-violet-700",
+    bg: "bg-violet-50",
+    border: "border-l-violet-400",
+    badge: "bg-violet-50 text-violet-700 border-violet-200",
+  },
+  compliance: {
+    icon: ShieldCheck,
+    label: "Compliance",
+    accent: "bg-amber-500",
+    light: "text-amber-700",
+    bg: "bg-amber-50",
+    border: "border-l-amber-400",
+    badge: "bg-amber-50 text-amber-700 border-amber-200",
+  },
+  accounting: {
+    icon: Receipt,
+    label: "Accounting",
+    accent: "bg-emerald-500",
+    light: "text-emerald-700",
+    bg: "bg-emerald-50",
+    border: "border-l-emerald-400",
+    badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  },
+  implementation: {
+    icon: Cpu,
+    label: "Tech",
+    accent: "bg-sky-500",
+    light: "text-sky-700",
+    bg: "bg-sky-50",
+    border: "border-l-sky-400",
+    badge: "bg-sky-50 text-sky-700 border-sky-200",
+  },
+};
 
 interface CampaignsViewProps {
   onOpenChatWithPrompt?: (prompt: string) => void;
+  onModifyInCopilot?: (campaignData: any, plan: any) => void;
 }
 
-export default function CampaignsView({ onOpenChatWithPrompt }: CampaignsViewProps) {
+export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot }: CampaignsViewProps) {
   const [campaigns, setCampaigns] = useState<Campaign[]>(INITIAL_CAMPAIGNS);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFilter, setSelectedFilter] = useState<"All" | "Live" | "Planning" | "In Review">("All");
@@ -38,6 +82,9 @@ export default function CampaignsView({ onOpenChatWithPrompt }: CampaignsViewPro
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [wizardStep, setWizardStep] = useState<"input" | "ai_generating" | "plan_review" | "zoho_pushing" | "push_success">("input");
   const [generationProgress, setGenerationProgress] = useState(0);
+
+  const [chatMessages, setChatMessages] = useState<Message[]>([]);
+  const [isChatLoading, setIsChatLoading] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -119,14 +166,79 @@ export default function CampaignsView({ onOpenChatWithPrompt }: CampaignsViewPro
       setTimeout(() => {
         const plan = data.plan || generateAspectPlan(formData);
         setGeneratedPlan(plan);
+        setChatMessages([
+          {
+            id: `msg-${Date.now()}-assistant`,
+            role: "assistant",
+            content: "I've drafted a 4-aspect plan based on your inputs. You can review the tasks on the left. Let me know if you need to add, remove, or modify any tasks before we push to Zoho Projects.",
+            timestamp: new Date(),
+          },
+        ]);
         setWizardStep("plan_review");
       }, 500);
     } catch {
       clearInterval(interval);
       const plan = generateAspectPlan(formData);
       setGeneratedPlan(plan);
+      setChatMessages([
+        {
+          id: `msg-${Date.now()}-assistant`,
+          role: "assistant",
+          content: "I've drafted a 4-aspect plan based on your inputs. You can review the tasks on the left. Let me know if you need to add, remove, or modify any tasks before we push to Zoho Projects.",
+          timestamp: new Date(),
+        },
+      ]);
       setWizardStep("plan_review");
     }
+  };
+
+  const handlePlanChat = (text: string) => {
+    const userMsg: Message = {
+      id: `msg-${Date.now()}-user`,
+      role: "user",
+      content: text,
+      timestamp: new Date(),
+    };
+    setChatMessages((prev) => [...prev, userMsg]);
+    setIsChatLoading(true);
+
+    // Simulate AI thinking and updating the plan
+    setTimeout(() => {
+      setIsChatLoading(false);
+      const assistantMsg: Message = {
+        id: `msg-${Date.now()}-assistant`,
+        role: "assistant",
+        content: "Got it! I've updated the plan to reflect your changes. I added a new task to handle this specific requirement. Let me know if everything looks good now.",
+        timestamp: new Date(),
+      };
+      setChatMessages((prev) => [...prev, assistantMsg]);
+
+      // Simulate a plan change (adding a task based on the chat)
+      setGeneratedPlan((prev): { tasks: AspectTask[]; aspectSummary: Campaign["aspectSummary"]; } | null => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          tasks: [
+            ...prev.tasks,
+            {
+              id: `task-${Date.now()}`,
+              aspect: "implementation" as const,
+              sopCode: "T-CUST",
+              title: `Custom Req: ${text.length > 20 ? text.slice(0, 20) + "..." : text}`,
+              status: "PENDING_APPROVAL" as const,
+              assignee: "Engineering Team",
+              urgency: "HIGH" as const,
+              tat: "2 Days",
+              details: text,
+              zohoTaskId: "",
+              mandatoryGate: false,
+              role: "Tech",
+              verificationRequirement: "Engineering sign-off required",
+            },
+          ],
+        };
+      });
+    }, 1500);
   };
 
   const handleApproveAndPushToZoho = async () => {
@@ -157,6 +269,7 @@ export default function CampaignsView({ onOpenChatWithPrompt }: CampaignsViewPro
     setGenerationProgress(0);
     setGeneratedPlan(null);
     setCreatedCampaign(null);
+    setChatMessages([]);
     setFormData({
       name: "",
       client: "",
@@ -389,7 +502,7 @@ export default function CampaignsView({ onOpenChatWithPrompt }: CampaignsViewPro
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.96, opacity: 0 }}
               transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="relative w-full max-w-3xl bg-white rounded-2xl shadow-xl overflow-hidden z-10 border border-stone-200 flex flex-col max-h-[90vh]"
+              className={`relative w-full ${wizardStep === "plan_review" ? "max-w-6xl h-[85vh]" : "max-w-3xl max-h-[90vh]"} bg-white rounded-2xl shadow-xl overflow-hidden z-10 border border-stone-200 flex flex-col transition-all duration-300`}
             >
               {/* Modal Header */}
               <div className="px-6 py-4 border-b border-stone-200 bg-stone-50/60 flex items-center justify-between flex-shrink-0">
@@ -421,7 +534,7 @@ export default function CampaignsView({ onOpenChatWithPrompt }: CampaignsViewPro
               </div>
 
               {/* Modal Body */}
-              <div className="p-6 overflow-y-auto flex-1 space-y-5">
+              <div className={`flex-1 min-h-0 flex flex-col ${wizardStep === "plan_review" ? "p-0 overflow-hidden" : "p-6 overflow-y-auto space-y-5"}`}>
                 {/* STEP 1: INPUT */}
                 {wizardStep === "input" && (
                   <div className="space-y-4">
@@ -574,65 +687,116 @@ export default function CampaignsView({ onOpenChatWithPrompt }: CampaignsViewPro
 
                 {/* STEP 3: PLAN REVIEW */}
                 {wizardStep === "plan_review" && generatedPlan && (
-                  <div className="space-y-4">
-                    <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
-                      <div>
-                        <span className="text-xs font-bold text-emerald-900 block">Plan Generated Successfully</span>
-                        <span className="text-[11px] text-emerald-700">
-                          {generatedPlan.tasks.length} tasks across 4 mandatory SOP gates
+                  <div className="flex flex-col h-full min-h-0 flex-1 bg-white overflow-hidden">
+                    {/* Plan Summary Bar */}
+                    <div className="px-6 py-4 border-b border-stone-100 flex items-center justify-between flex-shrink-0 bg-stone-50/50">
+                      <div className="min-w-0 flex-1 pr-4">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[11px] font-mono font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                            Draft AI Plan
+                          </span>
+                          <span className="text-[11px] text-stone-500">
+                            {formData.client} · {formData.budget} · {formData.codeVolume}
+                          </span>
+                        </div>
+                        <h4 className="text-sm font-bold text-stone-900 truncate">
+                          {formData.name}
+                        </h4>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="text-[11px] font-mono font-bold px-3 py-1 rounded-lg bg-white text-emerald-800 border border-emerald-200 shadow-xs flex items-center gap-1.5">
+                          <Clock size={13} weight="bold" />
+                          Recommended TAT: 12 Working Days
                         </span>
                       </div>
-                      <span className="text-xs font-mono font-bold px-2.5 py-1 rounded bg-white text-emerald-800 border border-emerald-200">
-                        TAT: 12 Days
-                      </span>
                     </div>
 
-                    {/* Aspect summary chips */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    {/* Aspect Summary Badges */}
+                    <div className="px-6 py-2.5 border-b border-stone-100 grid grid-cols-2 sm:grid-cols-4 gap-2 flex-shrink-0 bg-white">
                       {[
-                        { icon: Scales, label: "Legal", desc: "3 Tasks · T&C, Consents", color: "text-violet-700 bg-violet-50 border-violet-200" },
-                        { icon: ShieldCheck, label: "Compliance", desc: "3 Tasks · DLT, 72h UAT", color: "text-amber-700 bg-amber-50 border-amber-200" },
-                        { icon: Receipt, label: "Accounting", desc: "3 Tasks · 100% Adv", color: "text-emerald-700 bg-emerald-50 border-emerald-200" },
-                        { icon: Cpu, label: "Tech", desc: "4 Tasks · QR & Failover", color: "text-sky-700 bg-sky-50 border-sky-200" },
-                      ].map((asp) => (
-                        <div key={asp.label} className={`p-2.5 rounded-xl border ${asp.color}`}>
-                          <span className={`text-[11px] font-bold block flex items-center gap-1 mb-0.5`}>
-                            <asp.icon size={11} weight="fill" />
-                            {asp.label}
-                          </span>
-                          <span className="text-[10.5px] leading-tight block">{asp.desc}</span>
-                        </div>
-                      ))}
+                        { key: "legal", label: "Legal (3 Tasks)", desc: "T&C & Consents", meta: ASPECT_META.legal },
+                        { key: "compliance", label: "Compliance (3 Tasks)", desc: "DLT & 72h UAT", meta: ASPECT_META.compliance },
+                        { key: "accounting", label: "Accounting (3 Tasks)", desc: "100% Adv Payment", meta: ASPECT_META.accounting },
+                        { key: "implementation", label: "Tech (4 Tasks)", desc: "DNS & Failover", meta: ASPECT_META.implementation },
+                      ].map((asp) => {
+                        const Icon = asp.meta.icon;
+                        return (
+                          <div key={asp.key} className={`p-2 rounded-lg border ${asp.meta.badge} flex items-center gap-2`}>
+                            <Icon size={14} weight="duotone" className={asp.meta.light} />
+                            <div className="min-w-0">
+                              <span className="text-[11px] font-bold block truncate">{asp.label}</span>
+                              <span className="text-[9.5px] opacity-75 block truncate">{asp.desc}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
 
                     {/* Task list */}
-                    <div className="border border-stone-200 rounded-xl overflow-hidden">
-                      <div className="px-4 py-2.5 bg-stone-50 border-b border-stone-200 font-semibold text-xs text-stone-700 flex items-center justify-between">
-                        <span>Task Matrix for Zoho Projects</span>
-                        <span className="font-mono text-[11px] text-stone-400">{generatedPlan.tasks.length} tasks</span>
-                      </div>
-                      <div className="divide-y divide-stone-100 max-h-56 overflow-y-auto">
-                        {generatedPlan.tasks.map((task) => (
-                          <div key={task.id} className="p-3 text-xs flex items-center justify-between gap-3 hover:bg-stone-50/60">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 mb-0.5">
-                                <span className="text-[10px] font-mono font-semibold px-1.5 rounded bg-stone-100 text-stone-600">
-                                  {task.sopCode}
-                                </span>
-                                <span className={`text-[9.5px] font-semibold px-1.5 rounded capitalize ${aspectColors[task.aspect]}`}>
-                                  {task.aspect}
-                                </span>
-                                <span className="font-semibold text-stone-900 truncate">{task.title}</span>
-                              </div>
-                              <span className="text-[11px] text-stone-500 block truncate">
-                                {task.assignee} · TAT: {task.tat}
-                              </span>
-                            </div>
-                            <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 flex-shrink-0">
-                              {task.urgency}
-                            </span>
-                          </div>
-                        ))}
+                    <div className="flex-1 min-h-0 overflow-y-auto">
+                      <div className="divide-y divide-stone-100">
+                        <AnimatePresence>
+                          {generatedPlan.tasks.map((task, i) => {
+                            const meta = ASPECT_META[task.aspect as keyof typeof ASPECT_META] || ASPECT_META.implementation;
+                            const Icon = meta.icon;
+
+                            return (
+                              <motion.div
+                                key={task.id}
+                                initial={{ opacity: 0, x: -10 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                transition={{ duration: 0.2, delay: i * 0.03 }}
+                                className={`flex items-center gap-3 px-6 py-3.5 hover:bg-stone-50/60 transition-colors border-l-2 ${meta.border}`}
+                              >
+                                {/* Aspect icon */}
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${meta.bg}`}>
+                                  <Icon size={14} weight="duotone" className={meta.light} />
+                                </div>
+
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-[13px] font-semibold text-stone-900 block truncate">
+                                      {task.title}
+                                    </span>
+                                    {task.mandatoryGate && (
+                                      <span className="text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-px rounded flex-shrink-0">
+                                        Mandatory Gate
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 text-[10.5px] text-stone-500">
+                                    <span className="font-mono text-stone-400">{task.sopCode}</span>
+                                    <Dot size={8} className="text-stone-300" />
+                                    <span className={`font-semibold ${meta.light}`}>{meta.label}</span>
+                                    <Dot size={8} className="text-stone-300" />
+                                    <span className="flex items-center gap-1">
+                                      <User size={11} className="text-stone-400" />
+                                      {task.assignee}
+                                      {task.role ? ` (${task.role})` : ""}
+                                    </span>
+                                    {task.verificationRequirement && (
+                                      <>
+                                        <Dot size={8} className="text-stone-300 hidden md:inline" />
+                                        <span className="text-stone-400 truncate hidden md:inline">
+                                          Verification: {task.verificationRequirement}
+                                        </span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="flex flex-col items-end gap-1 flex-shrink-0 text-right">
+                                  <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-stone-100 text-stone-600">
+                                    {task.urgency}
+                                  </span>
+                                  <span className="text-[10.5px] text-stone-500 font-mono flex items-center gap-1">
+                                    <Clock size={11} className="text-stone-400" /> {task.tat}
+                                  </span>
+                                </div>
+                              </motion.div>
+                            );
+                          })}
+                        </AnimatePresence>
                       </div>
                     </div>
                   </div>
@@ -721,14 +885,32 @@ export default function CampaignsView({ onOpenChatWithPrompt }: CampaignsViewPro
                     >
                       Back
                     </button>
-                    <button
-                      type="button"
-                      onClick={handleApproveAndPushToZoho}
-                      className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer"
-                    >
-                      <CheckCircle size={16} weight="fill" />
-                      <span>Approve & Push to Zoho Projects</span>
-                    </button>
+                    
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsNewModalOpen(false);
+                          if (onModifyInCopilot) {
+                            onModifyInCopilot(formData, generatedPlan);
+                          }
+                        }}
+                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-semibold shadow-sm transition-all cursor-pointer border border-stone-800"
+                        title="Open interactive Copilot chat to modify tasks and adjust plan"
+                      >
+                        <Sparkle size={14} weight="fill" className="text-amber-400" />
+                        <span>Modify in Copilot</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleApproveAndPushToZoho}
+                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer"
+                      >
+                        <CheckCircle size={16} weight="fill" />
+                        <span>Approve & Push to Zoho</span>
+                      </button>
+                    </div>
                   </>
                 )}
               </div>

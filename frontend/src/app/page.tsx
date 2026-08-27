@@ -8,6 +8,7 @@ import CampaignsView from "@/components/CampaignsView";
 import ConnectionsView from "@/components/ConnectionsView";
 import UsersAndRolesView from "@/components/UsersAndRolesView";
 import CopilotView from "@/components/CopilotView";
+import { type Campaign } from "@/app/api/campaigns/route";
 
 const pageVariants = {
   initial: { opacity: 0, y: 8 },
@@ -15,9 +16,32 @@ const pageVariants = {
   exit: { opacity: 0, y: -4 },
 };
 
+export interface PlanContextForCopilot {
+  campaignData: {
+    name: string;
+    client: string;
+    rewardType: string;
+    budget: string;
+    codeVolume: string;
+    startDate: string;
+    endDate: string;
+    brief: string;
+  };
+  plan: {
+    tasks: any[];
+    aspectSummary: any;
+  };
+}
+
 export default function App() {
   const [currentView, setCurrentView] = useState<NavView>("copilot");
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [activePlanForCopilot, setActivePlanForCopilot] = useState<PlanContextForCopilot | null>(null);
+
+  const handleModifyInCopilot = (campaignData: any, plan: any) => {
+    setActivePlanForCopilot({ campaignData, plan });
+    setCurrentView("copilot");
+  };
 
   return (
     <div className="flex h-screen bg-[#FAFAF9] text-stone-900 overflow-hidden font-sans antialiased">
@@ -58,8 +82,18 @@ export default function App() {
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
             className="flex-1 flex flex-col min-h-0 overflow-hidden"
           >
-            {currentView === "copilot" && <CopilotView />}
-            {currentView === "campaigns" && <CampaignsView />}
+            {currentView === "copilot" && (
+              <CopilotView
+                initialPlanContext={activePlanForCopilot}
+                onClearPlanContext={() => setActivePlanForCopilot(null)}
+                onViewCampaigns={() => setCurrentView("campaigns")}
+              />
+            )}
+            {currentView === "campaigns" && (
+              <CampaignsView
+                onModifyInCopilot={handleModifyInCopilot}
+              />
+            )}
             {currentView === "connections" && <ConnectionsView />}
             {currentView === "users" && <UsersAndRolesView />}
           </motion.div>
