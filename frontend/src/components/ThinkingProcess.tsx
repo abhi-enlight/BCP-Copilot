@@ -75,7 +75,7 @@ export default function ThinkingProcess({ elapsedTime = 0 }: ThinkingProcessProp
     return () => clearInterval(stepInterval);
   }, []);
 
-  const currentStep = THINKING_STEPS[currentStepIndex];
+  const currentStep = THINKING_STEPS[currentStepIndex] || THINKING_STEPS[0];
 
   return (
     <motion.div
@@ -107,7 +107,7 @@ export default function ThinkingProcess({ elapsedTime = 0 }: ThinkingProcessProp
 
           <div className="flex items-center gap-2">
             <span className="text-[11.5px] text-slate-500 hidden sm:inline font-medium">
-              Stage {currentStepIndex + 1} of {THINKING_STEPS.length}
+              Stage {Math.min(currentStepIndex + 1, THINKING_STEPS.length)} of {THINKING_STEPS.length}
             </span>
             <button
               type="button"
@@ -119,7 +119,7 @@ export default function ThinkingProcess({ elapsedTime = 0 }: ThinkingProcessProp
         </div>
 
         {/* Live Active Step Badge (When collapsed) */}
-        {!isExpanded && (
+        {!isExpanded && currentStep && (
           <div className="px-4 py-2 bg-indigo-50/50 flex items-center gap-2 text-[12px] text-indigo-900 font-medium">
             <currentStep.icon size={14} className={currentStep.color} />
             <span>{currentStep.title}</span>
@@ -130,6 +130,7 @@ export default function ThinkingProcess({ elapsedTime = 0 }: ThinkingProcessProp
         <AnimatePresence>
           {isExpanded && (
             <motion.div
+              key="thinking-stepper-body"
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
