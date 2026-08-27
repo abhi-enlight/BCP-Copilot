@@ -53,14 +53,15 @@ export const INTEGRATIONS_LIST: IntegrationItem[] = [
     shortName: "Zoho CRM",
     category: "Enterprise Cloud CRM",
     status: "connected",
-    metric: "Connected",
-    detail: "Deals, Client Accounts, Contacts, Commercial Estimates & SOW Deal Tracking",
+    metric: "Read & Write",
+    detail: "Live Read & Write • Sync Deals, Client Accounts, SOW Commercials & Post-Campaign Closeout",
     icon: Database,
     color: "text-emerald-700",
     bg: "bg-emerald-50/80",
     border: "border-emerald-200",
     badgeBg: "bg-emerald-100",
     badgeText: "text-emerald-800",
+    isReadWrite: true,
   },
   {
     id: "zoho-books",
@@ -68,14 +69,15 @@ export const INTEGRATIONS_LIST: IntegrationItem[] = [
     shortName: "Zoho Books",
     category: "Accounting & Escrow",
     status: "connected",
-    metric: "Connected",
-    detail: "100% Advance Payment Verification for EGV Pool, GST Invoices & Ledger Reconciliation",
+    metric: "Read & Write",
+    detail: "Live Read & Write • 100% Advance Payment Verification, GST Invoicing, TDS 194B & Escrow Ledger",
     icon: Receipt,
     color: "text-emerald-700",
     bg: "bg-emerald-50/80",
     border: "border-emerald-200",
     badgeBg: "bg-emerald-100",
     badgeText: "text-emerald-800",
+    isReadWrite: true,
   },
   {
     id: "n8n",
@@ -132,7 +134,7 @@ export default function IntegrationStatus() {
         </div>
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-white border border-slate-200 text-slate-600 shadow-2xs">
-            6/6 Live
+            {INTEGRATIONS_LIST.length}/{INTEGRATIONS_LIST.length} Live
           </span>
           <span className="text-slate-400 group-hover:text-slate-700 transition-colors">
             {isSectionOpen ? <CaretUp size={12} /> : <CaretDown size={12} />}
@@ -150,7 +152,7 @@ export default function IntegrationStatus() {
             transition={{ duration: 0.2 }}
             className="space-y-1.5 mt-2 overflow-hidden"
           >
-            {INTEGRATIONS_LIST.slice(0, 3).map((item) => {
+            {INTEGRATIONS_LIST.map((item) => {
               const isSelected = selectedId === item.id;
               const IconComp = item.icon;
 

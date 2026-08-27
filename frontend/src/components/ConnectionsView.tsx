@@ -73,9 +73,9 @@ export default function ConnectionsView() {
       name: "Zoho CRM",
       category: "Enterprise CRM",
       status: "connected",
-      statusLabel: "Connected",
+      statusLabel: "Read & Write",
       statusColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
-      readWriteMode: "Read Only",
+      readWriteMode: "Read & Write",
       icon: "https://cdn.simpleicons.org/zoho/10b981",
       iconBg: "bg-emerald-50 border-emerald-200",
       iconColor: "text-emerald-600",
@@ -83,16 +83,16 @@ export default function ConnectionsView() {
         { label: "Deals Synced", value: "48" },
         { label: "Accounts", value: "19" },
         { label: "Latency", value: "48ms" },
-        { label: "Modules", value: "Deals, Invoices" },
+        { label: "Modules", value: "Deals, Accounts" },
       ],
       endpoint: "https://www.zohoapis.in/crm/v2",
       authMethod: "OAuth 2.0 (ZohoCRM.modules.ALL)",
       lastPing: "1 min ago (HTTP 200)",
       capabilities: [
-        "Read Commercial SOW Estimates & Deal Status",
-        "Fetch Client Brand SPOC Contacts",
-        "Link Campaigns to Zoho CRM Deal ID",
-        "Query Account History & Precedent Commercials",
+        "Read Commercial SOW Estimates, Deal Stages & Client Briefs (Read)",
+        "Auto-create Deals & Pipeline stages on campaign brief ingestion (Write)",
+        "Sync Brand SPOC contacts & account decision makers (Read & Write)",
+        "Update Deal revenue and post-campaign closeout debrief notes (Write)",
       ],
     },
     {
@@ -100,9 +100,9 @@ export default function ConnectionsView() {
       name: "Zoho Books",
       category: "Accounting & Escrow",
       status: "connected",
-      statusLabel: "Connected",
+      statusLabel: "Read & Write",
       statusColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
-      readWriteMode: "Read Only",
+      readWriteMode: "Read & Write",
       icon: "https://cdn.simpleicons.org/zoho/10b981",
       iconBg: "bg-emerald-50 border-emerald-200",
       iconColor: "text-emerald-600",
@@ -116,10 +116,10 @@ export default function ConnectionsView() {
       authMethod: "OAuth 2.0 (ZohoBooks.fullaccess.ALL)",
       lastPing: "2 mins ago (HTTP 200)",
       capabilities: [
-        "100% Advance Bank Receipt Confirmation for EGV Pools",
-        "GST Invoicing for Sticker Printing & Logistics",
-        "TDS Section 194B Tax Ledger Compliance",
-        "Escrow Reconciliation for High-Volume Cashbacks",
+        "100% Advance Bank Receipt Verification for EGV Pools (Read)",
+        "Generate GST Invoices for campaign retainer & sticker printing (Write)",
+        "Track TDS Section 194B Tax Ledger & Prize Winnings (Read & Write)",
+        "Automated Escrow pool reconciliation against cashback burn rate (Read & Write)",
       ],
     },
     {
@@ -149,39 +149,39 @@ export default function ConnectionsView() {
       ],
     },
     {
-      id: "gmail",
-      name: "Google Workspace (Gmail)",
-      category: "Email & Communication",
+      id: "n8n",
+      name: "n8n Orchestrator",
+      category: "Workflow Automation",
       status: "active",
-      statusLabel: "Connected",
+      statusLabel: "Active Engine",
       statusColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
-      readWriteMode: "Read & Write",
-      icon: "https://upload.wikimedia.org/wikipedia/commons/7/7e/Gmail_icon_%282020%29.svg",
-      iconBg: "bg-emerald-50 border-emerald-200",
-      iconColor: "text-emerald-600",
+      readWriteMode: "Orchestration",
+      icon: "https://cdn.simpleicons.org/n8n/EA4B71",
+      iconBg: "bg-rose-50 border-rose-200",
+      iconColor: "text-rose-600",
       metrics: [
-        { label: "Emails Synced", value: "24" },
-        { label: "Threads", value: "Active" },
-        { label: "Latency", value: "42ms" },
-        { label: "Inbox", value: "bcp.assist@" },
+        { label: "Workflows", value: "4 Active" },
+        { label: "Host", value: "Cloud n8n" },
+        { label: "Port", value: "5678" },
+        { label: "Triggers", value: "Webhooks" },
       ],
-      endpoint: "https://gmail.googleapis.com/gmail/v1/users/me",
-      authMethod: "OAuth 2.0 (Gmail API)",
+      endpoint: "https://indigo-pelican-266513.hostingersite.com",
+      authMethod: "MCP Server & Bearer Token",
       lastPing: "Just now (HTTP 200)",
       capabilities: [
-        "Read incoming client briefs and attachments",
-        "Send automated milestone completion alerts",
-        "Draft and send SOWs for partner sign-off",
+        "Event-driven webhook routing and NDJSON chat streaming",
+        "Bi-directional orchestration across Zoho CRM, Projects & Books",
+        "Autonomous Gemini AI aspect decomposition & risk assessment",
+        "Strict policy guardrails and human-in-the-loop interceptor",
       ],
     },
-
   ];
 
   const handlePingAll = () => {
     setIsPingingAll(true);
     setTimeout(() => {
       setIsPingingAll(false);
-      setPingSuccessNotice("All 6 connections verified healthy · avg latency 38ms");
+      setPingSuccessNotice(`All ${services.length} connections verified healthy · avg latency 38ms`);
       setTimeout(() => setPingSuccessNotice(null), 4000);
     }, 800);
   };
@@ -196,7 +196,7 @@ export default function ConnectionsView() {
           <h1 className="text-[15px] font-bold text-stone-900 tracking-tight">Connections</h1>
           <span className="inline-flex items-center gap-1.5 text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            6/6 Live
+            {services.length}/{services.length} Live
           </span>
         </div>
 

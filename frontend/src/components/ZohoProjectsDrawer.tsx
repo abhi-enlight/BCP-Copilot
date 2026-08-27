@@ -82,6 +82,8 @@ export default function ZohoProjectsDrawer({
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [drawerAspectFilter, setDrawerAspectFilter] = useState<"all" | "legal" | "compliance" | "accounting" | "implementation">("all");
+  const [drawerSearch, setDrawerSearch] = useState("");
 
   if (!isOpen) return null;
 
@@ -279,18 +281,77 @@ export default function ZohoProjectsDrawer({
             {/* TASKS TAB */}
             {activeTab === "tasks" && (
               <div>
-                {/* Hint bar */}
-                <div className="px-5 py-2 flex items-center justify-between border-b border-stone-100 bg-stone-50/60">
-                  <span className="text-[10px] text-stone-400">
-                    Click task row to expand · Check to mark closed in Zoho
-                  </span>
-                  <span className="text-[10px] font-mono font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                    Write Demo
-                  </span>
+                {/* Filter & Search Bar */}
+                <div className="px-5 py-2.5 border-b border-stone-100 bg-stone-50/70 space-y-2">
+                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                    {(
+                      [
+                        { key: "all" as const, label: "All", count: campaign.tasks.length },
+                        { key: "legal" as const, label: "Legal", count: campaign.tasks.filter((t) => t.aspect === "legal").length },
+                        { key: "compliance" as const, label: "Compliance", count: campaign.tasks.filter((t) => t.aspect === "compliance").length },
+                        { key: "accounting" as const, label: "Accounting", count: campaign.tasks.filter((t) => t.aspect === "accounting").length },
+                        { key: "implementation" as const, label: "Tech", count: campaign.tasks.filter((t) => t.aspect === "implementation").length },
+                      ]
+                    ).map((f) => {
+                      const isSel = drawerAspectFilter === f.key;
+                      return (
+                        <button
+                          key={f.key}
+                          type="button"
+                          onClick={() => setDrawerAspectFilter(f.key)}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border transition-all cursor-pointer flex items-center gap-1 whitespace-nowrap ${
+                            isSel
+                              ? "bg-stone-900 text-white border-stone-900 shadow-2xs"
+                              : "bg-white text-stone-600 hover:text-stone-900 border-stone-200"
+                          }`}
+                        >
+                          <span>{f.label}</span>
+                          <span
+                            className={`text-[9.5px] font-mono px-1 rounded-full ${
+                              isSel ? "bg-stone-700 text-stone-200" : "bg-stone-100 text-stone-500"
+                            }`}
+                          >
+                            {f.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2">
+                    <input
+                      type="text"
+                      placeholder="Filter tasks by name or owner..."
+                      value={drawerSearch}
+                      onChange={(e) => setDrawerSearch(e.target.value)}
+                      className="w-full text-xs px-2.5 py-1 bg-white border border-stone-200 rounded-lg outline-none focus:border-amber-500 placeholder:text-stone-400"
+                    />
+                    {drawerSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setDrawerSearch("")}
+                        className="text-[11px] text-stone-400 hover:text-stone-600 cursor-pointer whitespace-nowrap"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="divide-y divide-stone-100">
-                  {campaign.tasks.map((task, idx) => {
+                  {campaign.tasks
+                    .filter((task) => {
+                      const matchAsp =
+                        drawerAspectFilter === "all" || task.aspect === drawerAspectFilter;
+                      const q = drawerSearch.toLowerCase().trim();
+                      const matchQ =
+                        !q ||
+                        task.title.toLowerCase().includes(q) ||
+                        task.assignee.toLowerCase().includes(q) ||
+                        task.sopCode.toLowerCase().includes(q);
+                      return matchAsp && matchQ;
+                    })
+                    .map((task, idx) => {
                     const meta = ASPECT_META[task.aspect as keyof typeof ASPECT_META] || ASPECT_META.implementation;
                     const Icon = meta.icon;
                     const isDone = task.status === "COMPLETED";

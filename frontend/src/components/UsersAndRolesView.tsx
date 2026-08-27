@@ -122,6 +122,17 @@ const INITIAL_USERS: BigCityUser[] = [
     initials: "TJ",
     avatarColor: "from-stone-500 to-stone-700",
   },
+  {
+    id: "usr-9",
+    name: "Akash Verma",
+    email: "akash.verma@bigcity.in",
+    role: "Legal",
+    department: "Legal & Commercial Contracts",
+    status: "active_now",
+    lastActive: "Active now",
+    initials: "AV",
+    avatarColor: "from-amber-600 to-amber-900",
+  },
 ];
 
 const ROLE_META: Record<

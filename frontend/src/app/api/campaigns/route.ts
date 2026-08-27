@@ -640,7 +640,7 @@ export async function POST(request: NextRequest) {
       let aiAnalysisText = "";
       const N8N_WEBHOOK_URL =
         process.env.N8N_WEBHOOK_URL ||
-        "http://localhost:5678/webhook/db9f5c37-f5d5-4581-9ca6-74e2221ef5e4/chat";
+        "https://indigo-pelican-266513.hostingersite.com/webhook/20bf7228-5ae0-40c8-b937-00306e81cbec/chat";
 
       try {
         const aiPrompt = `Please analyze and generate a 4-aspect campaign plan (Legal, Compliance, Accounting, Implementation) for:

@@ -27,6 +27,7 @@ import ZohoProjectsDrawer from "./ZohoProjectsDrawer";
 import ChatMessage, { type Message } from "@/components/ChatMessage";
 import ChatInput from "@/components/ChatInput";
 import ThinkingProcess from "@/components/ThinkingProcess";
+import { applyPlanModifications } from "@/utils/planModifier";
 
 const ASPECT_META = {
   legal: {
@@ -76,6 +77,7 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
   const [campaigns, setCampaigns] = useState<Campaign[]>(INITIAL_CAMPAIGNS);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFilter, setSelectedFilter] = useState<"All" | "Live" | "Planning" | "In Review">("All");
+  const [wizardAspectFilter, setWizardAspectFilter] = useState<"all" | "legal" | "compliance" | "accounting" | "implementation">("all");
 
   const [selectedCampaignForDrawer, setSelectedCampaignForDrawer] = useState<Campaign | null>(null);
 
@@ -206,43 +208,39 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
     setChatMessages((prev) => [...prev, userMsg]);
     setIsChatLoading(true);
 
-    // Simulate AI thinking and updating the plan
     setTimeout(() => {
       setIsChatLoading(false);
-      const assistantMsg: Message = {
-        id: `msg-${Date.now()}-assistant`,
-        role: "assistant",
-        content: "Got it! I've updated the plan to reflect your changes. I added a new task to handle this specific requirement. Let me know if everything looks good now.",
-        timestamp: new Date(),
-      };
-      setChatMessages((prev) => [...prev, assistantMsg]);
+      if (!generatedPlan) return;
 
-      // Simulate a plan change (adding a task based on the chat)
-      setGeneratedPlan((prev): { tasks: AspectTask[]; aspectSummary: Campaign["aspectSummary"]; } | null => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          tasks: [
-            ...prev.tasks,
-            {
-              id: `task-${Date.now()}`,
-              aspect: "implementation" as const,
-              sopCode: "T-CUST",
-              title: `Custom Req: ${text.length > 20 ? text.slice(0, 20) + "..." : text}`,
-              status: "PENDING_APPROVAL" as const,
-              assignee: "Engineering Team",
-              urgency: "HIGH" as const,
-              tat: "2 Days",
-              details: text,
-              zohoTaskId: "",
-              mandatoryGate: false,
-              role: "Tech",
-              verificationRequirement: "Engineering sign-off required",
-            },
-          ],
+      const modResult = applyPlanModifications(generatedPlan.tasks, formData, text);
+      if (modResult.hasModifications) {
+        setGeneratedPlan((prev) =>
+          prev
+            ? {
+                ...prev,
+                tasks: modResult.updatedTasks,
+              }
+            : null
+        );
+        setFormData(modResult.updatedCampaignData);
+
+        const assistantMsg: Message = {
+          id: `msg-${Date.now()}-assistant`,
+          role: "assistant",
+          content: modResult.summaryMarkdown,
+          timestamp: new Date(),
         };
-      });
-    }, 1500);
+        setChatMessages((prev) => [...prev, assistantMsg]);
+      } else {
+        const assistantMsg: Message = {
+          id: `msg-${Date.now()}-assistant`,
+          role: "assistant",
+          content: `I've analyzed your instruction for **${formData.name}**. You can specify exact task modifications (e.g. _"assign all legal tasks to Akash Verma"_, _"change TAT to 1 day"_, or _"add a compliance task for TRAI DLT testing"_), or click **Modify in Copilot** for split-screen studio editing.`,
+          timestamp: new Date(),
+        };
+        setChatMessages((prev) => [...prev, assistantMsg]);
+      }
+    }, 500);
   };
 
   const handleApproveAndPushToZoho = async () => {
@@ -472,14 +470,33 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                     Synced {camp.lastZohoSync || "recently"}
                   </span>
 
-                  <button
-                    type="button"
-                    onClick={() => setSelectedCampaignForDrawer(camp)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-900 hover:bg-amber-700 text-white text-xs font-semibold transition-all duration-200 cursor-pointer shadow-sm"
-                  >
-                    <Kanban size={13} weight="bold" />
-                    <span>View Plan · {totalTasks} tasks</span>
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {onModifyInCopilot && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onModifyInCopilot(camp, {
+                            tasks: camp.tasks || [],
+                            aspectSummary: camp.aspectSummary,
+                          })
+                        }
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-semibold transition-all duration-200 cursor-pointer border border-stone-200 shadow-2xs"
+                        title="Open in Copilot Studio to reassign owners and adjust tasks"
+                      >
+                        <Sparkle size={13} weight="fill" className="text-amber-500" />
+                        <span>Modify in Copilot</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCampaignForDrawer(camp)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-900 hover:bg-amber-700 text-white text-xs font-semibold transition-all duration-200 cursor-pointer shadow-sm"
+                    >
+                      <Kanban size={13} weight="bold" />
+                      <span>View Plan · {totalTasks} tasks</span>
+                    </button>
+                  </div>
                 </div>
               </motion.div>
             );
@@ -715,23 +732,65 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                       </div>
                     </div>
 
-                    {/* Aspect Summary Badges */}
+                    {/* Aspect Summary Filter Badges */}
                     <div className="px-6 py-2.5 border-b border-stone-100 grid grid-cols-2 sm:grid-cols-4 gap-2 flex-shrink-0 bg-white">
                       {[
-                        { key: "legal", label: "Legal (3 Tasks)", desc: "T&C & Consents", meta: ASPECT_META.legal },
-                        { key: "compliance", label: "Compliance (3 Tasks)", desc: "DLT & 72h UAT", meta: ASPECT_META.compliance },
-                        { key: "accounting", label: "Accounting (3 Tasks)", desc: "100% Adv Payment", meta: ASPECT_META.accounting },
-                        { key: "implementation", label: "Tech (4 Tasks)", desc: "DNS & Failover", meta: ASPECT_META.implementation },
+                        {
+                          key: "legal" as const,
+                          label: `Legal (${generatedPlan.tasks.filter((t) => t.aspect === "legal").length} Tasks)`,
+                          desc: "T&C & Consents",
+                          meta: ASPECT_META.legal,
+                        },
+                        {
+                          key: "compliance" as const,
+                          label: `Compliance (${generatedPlan.tasks.filter((t) => t.aspect === "compliance").length} Tasks)`,
+                          desc: "DLT & 72h UAT",
+                          meta: ASPECT_META.compliance,
+                        },
+                        {
+                          key: "accounting" as const,
+                          label: `Accounting (${generatedPlan.tasks.filter((t) => t.aspect === "accounting").length} Tasks)`,
+                          desc: "100% Adv Payment",
+                          meta: ASPECT_META.accounting,
+                        },
+                        {
+                          key: "implementation" as const,
+                          label: `Tech (${generatedPlan.tasks.filter((t) => t.aspect === "implementation").length} Tasks)`,
+                          desc: "DNS & Failover",
+                          meta: ASPECT_META.implementation,
+                        },
                       ].map((asp) => {
                         const Icon = asp.meta.icon;
+                        const isSelected = wizardAspectFilter === asp.key;
                         return (
-                          <div key={asp.key} className={`p-2 rounded-lg border ${asp.meta.badge} flex items-center gap-2`}>
-                            <Icon size={14} weight="duotone" className={asp.meta.light} />
-                            <div className="min-w-0">
-                              <span className="text-[11px] font-bold block truncate">{asp.label}</span>
-                              <span className="text-[9.5px] opacity-75 block truncate">{asp.desc}</span>
+                          <button
+                            key={asp.key}
+                            type="button"
+                            onClick={() =>
+                              setWizardAspectFilter(
+                                isSelected ? "all" : asp.key
+                              )
+                            }
+                            className={`p-2 rounded-lg border text-left transition-all cursor-pointer flex items-center gap-2 ${
+                              isSelected
+                                ? `${asp.meta.badge} ring-2 ring-stone-900/10 shadow-xs scale-[1.01]`
+                                : "border-stone-200/80 bg-stone-50/60 hover:bg-stone-100/80 text-stone-700"
+                            }`}
+                          >
+                            <Icon
+                              size={14}
+                              weight="duotone"
+                              className={isSelected ? asp.meta.light : "text-stone-400"}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <span className="text-[11px] font-bold block truncate">
+                                {asp.label}
+                              </span>
+                              <span className="text-[9.5px] opacity-75 block truncate">
+                                {asp.desc}
+                              </span>
                             </div>
-                          </div>
+                          </button>
                         );
                       })}
                     </div>
@@ -740,7 +799,13 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                     <div className="flex-1 min-h-0 overflow-y-auto">
                       <div className="divide-y divide-stone-100">
                         <AnimatePresence>
-                          {generatedPlan.tasks.map((task, i) => {
+                          {generatedPlan.tasks
+                            .filter(
+                              (t) =>
+                                wizardAspectFilter === "all" ||
+                                t.aspect === wizardAspectFilter
+                            )
+                            .map((task, i) => {
                             const meta = ASPECT_META[task.aspect as keyof typeof ASPECT_META] || ASPECT_META.implementation;
                             const Icon = meta.icon;
 

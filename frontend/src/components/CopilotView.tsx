@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Plus,
@@ -18,6 +18,13 @@ import {
   User,
   ArrowSquareOut,
   Buildings,
+  MagnifyingGlass,
+  X,
+  Trash,
+  Check,
+  CaretDown,
+  Tag,
+  Funnel,
 } from "@phosphor-icons/react";
 import ChatMessage, { type Message } from "@/components/ChatMessage";
 import ChatInput from "@/components/ChatInput";
@@ -25,6 +32,11 @@ import ThinkingProcess from "@/components/ThinkingProcess";
 import EmptyState from "@/components/EmptyState";
 import { type PlanContextForCopilot } from "@/app/page";
 import { type AspectTask, type Campaign } from "@/app/api/campaigns/route";
+import {
+  applyPlanModifications,
+  BIGCITY_TEAM,
+  type TeamMember,
+} from "@/utils/planModifier";
 
 interface Session {
   id: string;
@@ -67,12 +79,46 @@ function deriveTitle(messages: Message[]): string {
   );
 }
 
-const ASPECT_ICONS = {
-  legal: Scales,
-  compliance: ShieldCheck,
-  accounting: Receipt,
-  implementation: Cpu,
+const ASPECT_META = {
+  legal: {
+    icon: Scales,
+    light: "text-violet-700",
+    bg: "bg-violet-50",
+    border: "border-l-violet-500",
+    badge: "bg-violet-50 text-violet-700 border-violet-200",
+    activeTab: "bg-violet-100/90 text-violet-900 border-violet-300 ring-1 ring-violet-300",
+    label: "Legal",
+  },
+  compliance: {
+    icon: ShieldCheck,
+    light: "text-amber-700",
+    bg: "bg-amber-50",
+    border: "border-l-amber-500",
+    badge: "bg-amber-50 text-amber-700 border-amber-200",
+    activeTab: "bg-amber-100/90 text-amber-900 border-amber-300 ring-1 ring-amber-300",
+    label: "Compliance",
+  },
+  accounting: {
+    icon: Receipt,
+    light: "text-emerald-700",
+    bg: "bg-emerald-50",
+    border: "border-l-emerald-500",
+    badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    activeTab: "bg-emerald-100/90 text-emerald-900 border-emerald-300 ring-1 ring-emerald-300",
+    label: "Accounting",
+  },
+  implementation: {
+    icon: Cpu,
+    light: "text-blue-700",
+    bg: "bg-blue-50",
+    border: "border-l-blue-500",
+    badge: "bg-blue-50 text-blue-700 border-blue-200",
+    activeTab: "bg-blue-100/90 text-blue-900 border-blue-300 ring-1 ring-blue-300",
+    label: "Tech & Ops",
+  },
 };
+
+type AspectKey = "all" | "legal" | "compliance" | "accounting" | "implementation";
 
 export default function CopilotView({
   initialPlanContext,
@@ -84,7 +130,27 @@ export default function CopilotView({
   const [isLoading, setIsLoading] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [isPushingToZoho, setIsPushingToZoho] = useState(false);
-  
+
+  // Filters & Search State
+  const [selectedAspectFilter, setSelectedAspectFilter] = useState<AspectKey>("all");
+  const [taskSearchQuery, setTaskSearchQuery] = useState("");
+  const [highlightedTaskIds, setHighlightedTaskIds] = useState<string[]>([]);
+  const [isAddTaskModalOpen, setIsAddTaskModalOpen] = useState(false);
+
+  // Inline edit state
+  const [editingAssigneeTaskId, setEditingAssigneeTaskId] = useState<string | null>(null);
+
+  // Add Task form state
+  const [newTaskForm, setNewTaskForm] = useState({
+    title: "",
+    aspect: "legal" as "legal" | "compliance" | "accounting" | "implementation",
+    assignee: "Akash Verma",
+    role: "Legal Counsel",
+    tat: "2 Days",
+    urgency: "HIGH" as AspectTask["urgency"],
+    details: "",
+  });
+
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -125,12 +191,14 @@ export default function CopilotView({
       status: "draft",
     };
     setWorkingPlan(newWorkingPlan);
+    setSelectedAspectFilter("all");
+    setTaskSearchQuery("");
 
     const newSess = createSession(`Plan: ${initialPlanContext.campaignData.name}`);
     const initialGreeting: Message = {
       id: `msg-${Date.now()}-assistant`,
       role: "assistant",
-      content: `Draft AI Project Plan loaded for **${initialPlanContext.campaignData.name}**\n\n**Client**: ${initialPlanContext.campaignData.client}  \n**Budget**: ${initialPlanContext.campaignData.budget}  \n**Volume**: ${initialPlanContext.campaignData.codeVolume}  \n**Estimated TAT**: 12 Working Days  \n\n### 4-Aspect Breakdown (${initialPlanContext.plan.tasks.length} Total Tasks):\n\n* **Legal** (3 Tasks): Terms & conditions drafting, partner consent verification, disclaimer compliance.\n* **Compliance** (3 Tasks): DLT / TRAI header whitelisting, regulatory approvals, 72h staging UAT sign-off.\n* **Accounting** (3 Tasks): Advance escrow receipt verification in Zoho Books, GST mapping.\n* **Tech & Operations** (4 Tasks): Cryptographic QR batch generation, CDN provisioning, gateway failover routing.\n\nYou can modify owners, adjust timelines, or add custom requirements directly in this chat. When ready, click **Approve & Push to Zoho** on the right or reply with **"Approve"**.`,
+      content: `Draft AI Project Plan loaded for **${initialPlanContext.campaignData.name}**\n\n**Client**: ${initialPlanContext.campaignData.client}  \n**Budget**: ${initialPlanContext.campaignData.budget}  \n**Volume**: ${initialPlanContext.campaignData.codeVolume}  \n**Estimated TAT**: 12 Working Days  \n\n### 4-Aspect Breakdown (${initialPlanContext.plan.tasks.length} Total Tasks):\n\n* **Legal** (${initialPlanContext.plan.tasks.filter((t: any) => t.aspect === "legal").length} Tasks): Terms & conditions drafting, partner consent verification, disclaimer compliance.\n* **Compliance** (${initialPlanContext.plan.tasks.filter((t: any) => t.aspect === "compliance").length} Tasks): DLT / TRAI header whitelisting, regulatory approvals, 72h staging UAT sign-off.\n* **Accounting** (${initialPlanContext.plan.tasks.filter((t: any) => t.aspect === "accounting").length} Tasks): Advance escrow receipt verification in Zoho Books, GST mapping.\n* **Tech & Operations** (${initialPlanContext.plan.tasks.filter((t: any) => t.aspect === "implementation").length} Tasks): Cryptographic QR batch generation, CDN provisioning, gateway failover routing.\n\nYou can modify owners (e.g. _"assign all legal tasks to Akash Verma"_), adjust timelines, or add custom requirements directly in this chat or on the plan canvas. When ready, click **Approve & Push to Zoho** on the right or reply with **"Approve"**.`,
       timestamp: new Date(),
     };
     newSess.messages = [initialGreeting];
@@ -138,12 +206,29 @@ export default function CopilotView({
     userHasScrolledUpRef.current = false;
   }, [initialPlanContext]);
 
+  // Filtered tasks computation
+  const displayedTasks = useMemo(() => {
+    if (!workingPlan) return [];
+    return workingPlan.tasks.filter((t) => {
+      const matchesAspect =
+        selectedAspectFilter === "all" || t.aspect === selectedAspectFilter;
+      const q = taskSearchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !q ||
+        t.title.toLowerCase().includes(q) ||
+        t.assignee.toLowerCase().includes(q) ||
+        t.sopCode.toLowerCase().includes(q) ||
+        (t.details && t.details.toLowerCase().includes(q));
+      return matchesAspect && matchesSearch;
+    });
+  }, [workingPlan, selectedAspectFilter, taskSearchQuery]);
+
   // Handle live approve & push to Zoho Projects
   const handleApprovePlanToZoho = async () => {
     if (!workingPlan || workingPlan.status === "live") return;
 
     setIsPushingToZoho(true);
-    setWorkingPlan((prev) => prev ? { ...prev, status: "syncing" } : null);
+    setWorkingPlan((prev) => (prev ? { ...prev, status: "syncing" } : null));
 
     try {
       const res = await fetch("/api/campaigns", {
@@ -159,14 +244,15 @@ export default function CopilotView({
       if (res.ok) {
         const data = await res.json();
         const created = data.campaign as Campaign;
-        
+
         setWorkingPlan((prev) =>
           prev
             ? {
                 ...prev,
                 status: "live",
                 zohoProjectId: created.zohoProjectId || "ZP-881290",
-                zohoProjectUrl: created.zohoProjectUrl || "https://projects.zoho.in",
+                zohoProjectUrl:
+                  created.zohoProjectUrl || "https://projects.zoho.in",
               }
             : null
         );
@@ -175,7 +261,7 @@ export default function CopilotView({
         const confirmationMsg: Message = {
           id: `msg-${Date.now()}-assistant`,
           role: "assistant",
-          content: `**Plan Approved and Pushed to Zoho Projects**\n\n* **Zoho Project ID**: \`${created.zohoProjectId || "ZP-881290"}\`\n* **Client**: ${created.client}\n* **Tasks Synchronized**: ${workingPlan.tasks.length} tasks across 4 milestone gates\n* **Sync Status**: Live (REST API sync active, latency: 32ms)\n\nAll assigned SPOCs (Legal, Compliance, Escrow, Tech) have been provisioned in BigCity Portal #81293.`,
+          content: `**Plan Approved and Pushed to Zoho Projects**\n\n* **Zoho Project ID**: \`${created.zohoProjectId || "ZP-881290"}\`\n* **Client**: ${created.client}\n* **Tasks Synchronized**: ${workingPlan.tasks.length} tasks across 4 milestone gates\n* **Sync Status**: Live (REST API sync active, latency: 32ms)\n\nAll assigned SPOCs (${Array.from(new Set(workingPlan.tasks.map((t) => t.assignee))).join(", ")}) have been provisioned in BigCity Portal #81293.`,
           timestamp: new Date(),
         };
 
@@ -189,6 +275,82 @@ export default function CopilotView({
     } finally {
       setIsPushingToZoho(false);
     }
+  };
+
+  // Direct Inline Task Field Updates
+  const handleUpdateTaskField = (
+    taskId: string,
+    updates: Partial<AspectTask>
+  ) => {
+    if (!workingPlan) return;
+    setWorkingPlan((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        tasks: prev.tasks.map((t) => (t.id === taskId ? { ...t, ...updates } : t)),
+      };
+    });
+    setHighlightedTaskIds([taskId]);
+    setTimeout(() => setHighlightedTaskIds([]), 3500);
+  };
+
+  // Direct Inline Task Deletion
+  const handleDeleteTask = (taskId: string) => {
+    if (!workingPlan) return;
+    setWorkingPlan((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        tasks: prev.tasks.filter((t) => t.id !== taskId),
+      };
+    });
+  };
+
+  // Handle Add New Task
+  const handleCreateNewTask = () => {
+    if (!workingPlan || !newTaskForm.title.trim()) return;
+
+    const count = workingPlan.tasks.filter((t) => t.aspect === newTaskForm.aspect).length + 1;
+    const sopCode = `SOP-${newTaskForm.aspect.slice(0, 3).toUpperCase()}-0${count}`;
+    const newTaskId = `task-${Date.now()}`;
+
+    const task: AspectTask = {
+      id: newTaskId,
+      sopCode,
+      title: newTaskForm.title.trim(),
+      aspect: newTaskForm.aspect,
+      assignee: newTaskForm.assignee,
+      role: newTaskForm.role,
+      urgency: newTaskForm.urgency,
+      tat: newTaskForm.tat,
+      status: "PENDING_APPROVAL",
+      zohoTaskId: `ZP-T-${Math.floor(100000 + Math.random() * 900000)}`,
+      zohoTaskStatus: "Open",
+      details: newTaskForm.details || newTaskForm.title,
+      verificationRequirement: `${newTaskForm.role} sign-off required before Go-Live`,
+      mandatoryGate: true,
+    };
+
+    setWorkingPlan((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        tasks: [...prev.tasks, task],
+      };
+    });
+
+    setHighlightedTaskIds([newTaskId]);
+    setTimeout(() => setHighlightedTaskIds([]), 4000);
+    setIsAddTaskModalOpen(false);
+    setNewTaskForm({
+      title: "",
+      aspect: "legal",
+      assignee: "Akash Verma",
+      role: "Legal Counsel",
+      tat: "2 Days",
+      urgency: "HIGH",
+      details: "",
+    });
   };
 
   const sendMessage = useCallback(
@@ -220,82 +382,34 @@ export default function CopilotView({
         return;
       }
 
-      // Check if user is asking to modify, add, or adjust specific plan tasks
-      const lower = content.toLowerCase();
-      const isModificationIntent =
-        workingPlan &&
-        workingPlan.status !== "live" &&
-        (lower.includes("add") ||
-          lower.includes("remove") ||
-          lower.includes("delete") ||
-          lower.includes("change") ||
-          lower.includes("update") ||
-          lower.includes("reassign") ||
-          lower.includes("set") ||
-          lower.includes("tat") ||
-          lower.includes("deadline") ||
-          lower.includes("gateway") ||
-          lower.includes("escrow") ||
-          lower.includes("uat") ||
-          lower.includes("razorpay") ||
-          lower.includes("paytm") ||
-          lower.includes("nda") ||
-          lower.includes("legal") ||
-          lower.includes("compliance") ||
-          lower.includes("accounting") ||
-          lower.includes("tech"));
+      // Check if user request contains plan modification intent (e.g. "assign all legal tasks to Akash Verma")
+      let planModified = false;
+      let modificationSummary = "";
+      if (workingPlan && workingPlan.status !== "live") {
+        const modResult = applyPlanModifications(
+          workingPlan.tasks,
+          workingPlan.campaignData,
+          content
+        );
 
-      if (isModificationIntent && workingPlan) {
-        let modifiedAspect: "legal" | "compliance" | "accounting" | "implementation" = "implementation";
-        if (lower.includes("legal") || lower.includes("t&c") || lower.includes("consent") || lower.includes("nda") || lower.includes("agreement") || lower.includes("contract")) {
-          modifiedAspect = "legal";
-        } else if (lower.includes("compliance") || lower.includes("dlt") || lower.includes("trai") || lower.includes("audit") || lower.includes("regulation") || lower.includes("vat")) {
-          modifiedAspect = "compliance";
-        } else if (lower.includes("budget") || lower.includes("accounting") || lower.includes("finance") || lower.includes("escrow") || lower.includes("invoice") || lower.includes("payment")) {
-          modifiedAspect = "accounting";
+        if (modResult.hasModifications) {
+          planModified = true;
+          modificationSummary = modResult.summaryMarkdown;
+
+          // Update working plan state inline immediately
+          setWorkingPlan((prev) => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              tasks: modResult.updatedTasks,
+              campaignData: modResult.updatedCampaignData,
+            };
+          });
+
+          // Highlight the modified tasks
+          setHighlightedTaskIds(modResult.modifiedTaskIds);
+          setTimeout(() => setHighlightedTaskIds([]), 4500);
         }
-
-        const defaultAssignee =
-          modifiedAspect === "legal"
-            ? "Prashant Mittal (Legal Head)"
-            : modifiedAspect === "compliance"
-            ? "Compliance SPOC"
-            : modifiedAspect === "accounting"
-            ? "CS Finance Lead"
-            : "Sachin (Tech Team)";
-
-        // Extract a clean title
-        let cleanTitle = content
-          .replace(/^(please |can you |kindly |add |update |modify |change )+/i, "")
-          .trim();
-        if (cleanTitle.length > 55) {
-          cleanTitle = cleanTitle.slice(0, 55) + "…";
-        }
-        cleanTitle = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
-
-        const newTask: AspectTask = {
-          id: `task-${Date.now()}`,
-          sopCode: `SOP-${modifiedAspect.slice(0, 3).toUpperCase()}-0${workingPlan.tasks.length + 1}`,
-          title: cleanTitle,
-          aspect: modifiedAspect,
-          assignee: defaultAssignee,
-          role: modifiedAspect === "legal" ? "Legal Head" : modifiedAspect === "accounting" ? "Finance Lead" : "Tech Lead",
-          urgency: lower.includes("urgent") || lower.includes("critical") ? "HIGHEST" : "HIGH",
-          tat: lower.includes("24h") || lower.includes("1 day") ? "1 Day" : lower.includes("3 day") ? "3 Days" : "2 Days",
-          status: "PENDING_APPROVAL",
-          details: content,
-          verificationRequirement: "SPOC sign-off before campaign activation",
-          mandatoryGate: false,
-        };
-
-        setWorkingPlan((prev) => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            tasks: [...prev.tasks, newTask],
-            lastUpdatedAspect: modifiedAspect,
-          };
-        });
       }
 
       // Format prompt with context if working on a plan
@@ -307,12 +421,12 @@ Client: ${workingPlan.campaignData.client}
 Budget: ${workingPlan.campaignData.budget}
 Volume: ${workingPlan.campaignData.codeVolume}
 Current Tasks (${workingPlan.tasks.length}):
-${workingPlan.tasks.map((t, idx) => `${idx + 1}. [${t.aspect.toUpperCase()}] ${t.title} (Owner: ${t.assignee}, TAT: ${t.tat})`).join("\n")}
+${workingPlan.tasks.map((t, idx) => `${idx + 1}. [${t.aspect.toUpperCase()}] ${t.title} (Owner: ${t.assignee}, TAT: ${t.tat}, Urgency: ${t.urgency})`).join("\n")}
 
 User Request: ${content}`;
       }
 
-      // Standard Copilot Chat API call to live n8n AI Agent
+      // Chat API call / Stream
       setIsLoading(true);
       setIsThinking(true);
 
@@ -380,10 +494,16 @@ User Request: ${content}`;
                   if (!firstChunkReceived) {
                     firstChunkReceived = true;
                     setIsThinking(false);
+
+                    // If plan was modified, prepend or prioritize the structured modification summary
+                    const initialContent = planModified && modificationSummary
+                      ? `${modificationSummary}\n\n---\n${accumulatedContent}`
+                      : accumulatedContent;
+
                     const initialMsg: Message = {
                       id: `msg-${Date.now()}-assistant`,
                       role: "assistant",
-                      content: accumulatedContent,
+                      content: initialContent,
                       timestamp: new Date(),
                     };
                     setSession((prev) => ({
@@ -395,9 +515,13 @@ User Request: ${content}`;
                       const msgs = [...prev.messages];
                       const lastIdx = msgs.length - 1;
                       if (lastIdx >= 0 && msgs[lastIdx].role === "assistant") {
+                        const finalContent = planModified && modificationSummary
+                          ? `${modificationSummary}\n\n---\n${accumulatedContent}`
+                          : accumulatedContent;
+
                         msgs[lastIdx] = {
                           ...msgs[lastIdx],
-                          content: accumulatedContent,
+                          content: finalContent,
                         };
                       }
                       return { ...prev, messages: msgs };
@@ -416,10 +540,16 @@ User Request: ${content}`;
           const data = await response.json();
           setIsThinking(false);
           setIsLoading(false);
+
+          let outputText = data.text || data.output || data.content || data.error || "";
+          if (planModified && modificationSummary) {
+            outputText = `${modificationSummary}\n\n---\n${outputText}`;
+          }
+
           const assistantMessage: Message = {
             id: `msg-${Date.now()}-assistant`,
             role: "assistant",
-            content: data.text || data.output || data.content || data.error || "No response from BCP Assist.",
+            content: outputText || "Plan updated successfully.",
             timestamp: new Date(),
           };
 
@@ -432,20 +562,34 @@ User Request: ${content}`;
         setIsThinking(false);
         if (err instanceof DOMException && err.name === "AbortError") return;
 
-        const errorMessage =
-          err instanceof Error ? err.message : "Something went wrong";
+        // If network failed but we modified plan locally, show successful modification summary
+        if (planModified && modificationSummary) {
+          const assistantMessage: Message = {
+            id: `msg-${Date.now()}-assistant`,
+            role: "assistant",
+            content: modificationSummary,
+            timestamp: new Date(),
+          };
+          setSession((prev) => ({
+            ...prev,
+            messages: [...prev.messages, assistantMessage],
+          }));
+        } else {
+          const errorMessage =
+            err instanceof Error ? err.message : "Something went wrong";
 
-        const errMessage: Message = {
-          id: `msg-${Date.now()}-error`,
-          role: "assistant",
-          content: `**Connection Alert:** ${errorMessage}\n\nPlease verify that your server is running.`,
-          timestamp: new Date(),
-        };
+          const errMessage: Message = {
+            id: `msg-${Date.now()}-error`,
+            role: "assistant",
+            content: `**Connection Notice:** ${errorMessage}\n\nYour plan changes were captured locally.`,
+            timestamp: new Date(),
+          };
 
-        setSession((prev) => ({
-          ...prev,
-          messages: [...prev.messages, errMessage],
-        }));
+          setSession((prev) => ({
+            ...prev,
+            messages: [...prev.messages, errMessage],
+          }));
+        }
       } finally {
         setIsLoading(false);
         setIsThinking(false);
@@ -581,7 +725,7 @@ User Request: ${content}`;
               <div className="flex items-center justify-between text-[11px] text-stone-400 px-1 mt-2">
                 <span>
                   {workingPlan && workingPlan.status !== "live" ? (
-                    <>Type your edits to update the live plan on the right</>
+                    <>Try: <code className="text-stone-700 bg-stone-100 px-1 py-0.5 rounded font-mono">assign all legal tasks to Akash Verma</code> or <code className="text-stone-700 bg-stone-100 px-1 py-0.5 rounded font-mono">change TAT to 1 day</code></>
                   ) : (
                     <>Press <kbd className="px-1.5 py-0.5 rounded bg-stone-50 border border-stone-200 text-[10px] text-stone-600 font-mono shadow-xs">Enter ↵</kbd> to send</>
                   )}
@@ -592,13 +736,13 @@ User Request: ${content}`;
           </div>
         </div>
 
-        {/* RIGHT PANE: Live Full Plan View */}
+        {/* RIGHT PANE: Live Full Plan Canvas & Task Studio */}
         {workingPlan && (
           <div className="hidden lg:flex flex-1 flex-col h-full min-h-0 bg-[#FBFBFA] overflow-hidden">
-            {/* Header: Clean, airy & focused */}
-            <div className="px-6 py-4 border-b border-stone-200/80 bg-white flex items-center justify-between flex-shrink-0">
+            {/* Header: Campaign Info & Push Action */}
+            <div className="px-6 py-3.5 border-b border-stone-200/80 bg-white flex items-center justify-between flex-shrink-0">
               <div className="min-w-0 flex-1 pr-4">
-                <div className="flex items-center gap-2 mb-1.5">
+                <div className="flex items-center gap-2 mb-1">
                   <span
                     className={`inline-flex items-center gap-1.5 text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-md border ${
                       workingPlan.status === "live"
@@ -616,14 +760,28 @@ User Request: ${content}`;
                   <span className="text-xs font-mono text-stone-500">
                     {workingPlan.campaignData.budget}
                   </span>
+                  <span className="text-stone-300">·</span>
+                  <span className="text-xs font-mono text-stone-500">
+                    {workingPlan.campaignData.codeVolume}
+                  </span>
                 </div>
                 <h2 className="text-base font-bold text-stone-900 tracking-tight truncate">
                   {workingPlan.campaignData.name}
                 </h2>
               </div>
 
-              {/* Main Approve Action */}
-              <div className="flex items-center gap-2.5 flex-shrink-0">
+              {/* Main Actions */}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsAddTaskModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-semibold transition-all cursor-pointer border border-stone-200"
+                  title="Add custom task to plan"
+                >
+                  <Plus size={14} weight="bold" />
+                  <span>Add Task</span>
+                </button>
+
                 {workingPlan.status === "live" ? (
                   <button
                     type="button"
@@ -638,7 +796,7 @@ User Request: ${content}`;
                     type="button"
                     onClick={handleApprovePlanToZoho}
                     disabled={isPushingToZoho}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold shadow-sm hover:shadow-md cursor-pointer transition-all active:scale-98"
+                    className="flex items-center gap-2 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold shadow-sm hover:shadow-md cursor-pointer transition-all active:scale-98"
                   >
                     {isPushingToZoho ? (
                       <>
@@ -656,144 +814,490 @@ User Request: ${content}`;
               </div>
             </div>
 
-            {/* Filter & Aspect Navigator Tabs (Subtle & clean) */}
-            <div className="px-6 py-3 bg-white border-b border-stone-200/60 flex items-center justify-between gap-3 flex-shrink-0">
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            {/* Filter & Aspect Navigator Tabs (FULLY INTERACTIVE & FILTERABLE) */}
+            <div className="px-6 py-2.5 bg-white border-b border-stone-200/60 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
                 {(
                   [
-                    { id: "all", label: "All Tasks", count: workingPlan.tasks.length, icon: Sparkle },
-                    { id: "legal", label: "Legal", count: workingPlan.tasks.filter((t) => t.aspect === "legal").length, icon: Scales },
-                    { id: "compliance", label: "Compliance", count: workingPlan.tasks.filter((t) => t.aspect === "compliance").length, icon: ShieldCheck },
-                    { id: "accounting", label: "Accounting", count: workingPlan.tasks.filter((t) => t.aspect === "accounting").length, icon: Receipt },
-                    { id: "implementation", label: "Tech & Ops", count: workingPlan.tasks.filter((t) => t.aspect === "implementation").length, icon: Cpu },
-                  ] as const
+                    { id: "all" as const, label: "All Tasks", count: workingPlan.tasks.length, icon: Sparkle },
+                    { id: "legal" as const, label: "Legal", count: workingPlan.tasks.filter((t) => t.aspect === "legal").length, icon: Scales },
+                    { id: "compliance" as const, label: "Compliance", count: workingPlan.tasks.filter((t) => t.aspect === "compliance").length, icon: ShieldCheck },
+                    { id: "accounting" as const, label: "Accounting", count: workingPlan.tasks.filter((t) => t.aspect === "accounting").length, icon: Receipt },
+                    { id: "implementation" as const, label: "Tech & Ops", count: workingPlan.tasks.filter((t) => t.aspect === "implementation").length, icon: Cpu },
+                  ]
                 ).map((tab) => {
                   const Icon = tab.icon;
+                  const isActive = selectedAspectFilter === tab.id;
+                  const activeClass =
+                    tab.id === "all"
+                      ? "bg-stone-900 text-white border-stone-900 shadow-xs"
+                      : ASPECT_META[tab.id as keyof typeof ASPECT_META]?.activeTab || "bg-stone-900 text-white";
+
                   return (
-                    <div
+                    <button
                       key={tab.id}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-stone-50 border border-stone-200/70 text-stone-700"
+                      type="button"
+                      onClick={() => setSelectedAspectFilter(tab.id)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                        isActive
+                          ? activeClass
+                          : "bg-stone-50 hover:bg-stone-100 border-stone-200/80 text-stone-600 hover:text-stone-900"
+                      }`}
                     >
-                      <Icon size={13} weight="bold" className="text-stone-500" />
+                      <Icon
+                        size={13}
+                        weight={isActive ? "fill" : "bold"}
+                        className={isActive && tab.id !== "all" ? "" : isActive ? "text-amber-400" : "text-stone-400"}
+                      />
                       <span>{tab.label}</span>
-                      <span className="ml-0.5 text-[11px] font-mono px-1.5 py-0.2 rounded-full bg-white border border-stone-200 text-stone-600">
+                      <span
+                        className={`ml-0.5 text-[11px] font-mono px-1.5 py-0.2 rounded-full border ${
+                          isActive
+                            ? tab.id === "all"
+                              ? "bg-stone-800 border-stone-700 text-stone-200"
+                              : "bg-white/80 border-black/10 text-stone-800"
+                            : "bg-white border-stone-200 text-stone-500"
+                        }`}
+                      >
                         {tab.count}
                       </span>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
 
-              <span className="text-[11px] font-mono text-stone-400 whitespace-nowrap hidden xl:inline">
-                Est. TAT: 12 Working Days
-              </span>
+              {/* Search input for instant task lookup */}
+              <div className="relative flex items-center min-w-[170px] max-w-[220px]">
+                <MagnifyingGlass size={13} className="absolute left-2.5 text-stone-400 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Filter tasks..."
+                  value={taskSearchQuery}
+                  onChange={(e) => setTaskSearchQuery(e.target.value)}
+                  className="w-full pl-7.5 pr-6 py-1 text-xs bg-stone-50 hover:bg-stone-100/80 focus:bg-white border border-stone-200 rounded-lg outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all placeholder:text-stone-400"
+                />
+                {taskSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setTaskSearchQuery("")}
+                    className="absolute right-2 text-stone-400 hover:text-stone-600 cursor-pointer"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Spacious Scrollable Task Cards */}
             <div className="flex-1 overflow-y-auto p-6 space-y-3.5">
-              <AnimatePresence>
-                {workingPlan.tasks.map((task, i) => {
-                  const meta = {
-                    legal: {
-                      icon: Scales,
-                      light: "text-violet-700",
-                      bg: "bg-violet-50",
-                      border: "border-l-violet-500",
-                      badge: "bg-violet-50 text-violet-700 border-violet-200",
-                      label: "Legal",
-                    },
-                    compliance: {
-                      icon: ShieldCheck,
-                      light: "text-amber-700",
-                      bg: "bg-amber-50",
-                      border: "border-l-amber-500",
-                      badge: "bg-amber-50 text-amber-700 border-amber-200",
-                      label: "Compliance",
-                    },
-                    accounting: {
-                      icon: Receipt,
-                      light: "text-emerald-700",
-                      bg: "bg-emerald-50",
-                      border: "border-l-emerald-500",
-                      badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
-                      label: "Accounting",
-                    },
-                    implementation: {
-                      icon: Cpu,
-                      light: "text-blue-700",
-                      bg: "bg-blue-50",
-                      border: "border-l-blue-500",
-                      badge: "bg-blue-50 text-blue-700 border-blue-200",
-                      label: "Tech & Ops",
-                    },
-                  }[task.aspect as "legal" | "compliance" | "accounting" | "implementation"] || {
-                    icon: Cpu,
-                    light: "text-stone-700",
-                    bg: "bg-stone-50",
-                    border: "border-l-stone-400",
-                    badge: "bg-stone-50 text-stone-700 border-stone-200",
-                    label: task.aspect,
-                  };
+              {displayedTasks.length === 0 ? (
+                <div className="py-12 px-4 text-center">
+                  <div className="w-12 h-12 rounded-2xl bg-stone-100 flex items-center justify-center mx-auto mb-3 text-stone-400">
+                    <Funnel size={22} weight="light" />
+                  </div>
+                  <h4 className="text-sm font-semibold text-stone-800">No tasks match filter</h4>
+                  <p className="text-xs text-stone-500 mt-1 max-w-xs mx-auto">
+                    {taskSearchQuery
+                      ? `No tasks matching "${taskSearchQuery}" in ${selectedAspectFilter === "all" ? "the plan" : selectedAspectFilter}.`
+                      : `No tasks found in the ${selectedAspectFilter} aspect.`}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedAspectFilter("all");
+                      setTaskSearchQuery("");
+                    }}
+                    className="mt-3.5 px-3 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold cursor-pointer border border-stone-200"
+                  >
+                    Clear Filter
+                  </button>
+                </div>
+              ) : (
+                <AnimatePresence>
+                  {displayedTasks.map((task, i) => {
+                    const meta =
+                      ASPECT_META[task.aspect as keyof typeof ASPECT_META] ||
+                      ASPECT_META.implementation;
+                    const Icon = meta.icon;
+                    const isHighlighted = highlightedTaskIds.includes(task.id);
+                    const isEditingAssignee = editingAssigneeTaskId === task.id;
 
-                  const Icon = meta.icon;
-
-                  return (
-                    <motion.div
-                      key={task.id}
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.2, delay: i * 0.025 }}
-                      className={`p-4 rounded-xl bg-white border border-stone-200/90 border-l-4 ${meta.border} shadow-2xs hover:shadow-xs hover:border-stone-300 transition-all space-y-2.5`}
-                    >
-                      {/* Top row: Title + TAT Pill */}
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${meta.bg}`}>
-                            <Icon size={14} weight="duotone" className={meta.light} />
+                    return (
+                      <motion.div
+                        key={task.id}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{
+                          opacity: 1,
+                          y: 0,
+                          scale: isHighlighted ? [1, 1.015, 1] : 1,
+                        }}
+                        transition={{ duration: 0.25, delay: i * 0.02 }}
+                        className={`p-4 rounded-xl bg-white border transition-all space-y-2.5 relative group ${
+                          isHighlighted
+                            ? "border-amber-400 shadow-md ring-2 ring-amber-300/40 bg-amber-50/20"
+                            : "border-stone-200/90 shadow-2xs hover:shadow-xs hover:border-stone-300"
+                        } border-l-4 ${meta.border}`}
+                      >
+                        {/* Top row: Aspect Icon + Title + Actions */}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            <div
+                              className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${meta.bg}`}
+                            >
+                              <Icon size={14} weight="duotone" className={meta.light} />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-mono font-bold text-stone-400">
+                                  {task.sopCode}
+                                </span>
+                                {isHighlighted && (
+                                  <span className="text-[9.5px] font-mono font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
+                                    UPDATED
+                                  </span>
+                                )}
+                              </div>
+                              <h4 className="text-[13.5px] font-bold text-stone-900 leading-snug">
+                                {task.title}
+                              </h4>
+                            </div>
                           </div>
-                          <h4 className="text-[13.5px] font-bold text-stone-900 leading-snug">
-                            {task.title}
-                          </h4>
+
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {/* TAT Editor Pill */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextTat =
+                                  task.tat === "1 Day"
+                                    ? "2 Days"
+                                    : task.tat === "2 Days"
+                                    ? "3 Days"
+                                    : task.tat === "3 Days"
+                                    ? "5 Days"
+                                    : "1 Day";
+                                handleUpdateTaskField(task.id, { tat: nextTat });
+                              }}
+                              className="text-[11px] font-mono font-medium px-2.5 py-1 rounded-md bg-stone-100/80 hover:bg-stone-200/80 text-stone-600 hover:text-stone-900 flex items-center gap-1.5 transition-colors cursor-pointer border border-transparent hover:border-stone-200"
+                              title="Click to cycle TAT duration"
+                            >
+                              <Clock size={12} className="text-stone-400" />
+                              {task.tat}
+                            </button>
+
+                            {/* Delete Task Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteTask(task.id)}
+                              className="w-7 h-7 rounded-lg text-stone-300 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
+                              title="Delete task from plan"
+                            >
+                              <Trash size={13} />
+                            </button>
+                          </div>
                         </div>
 
-                        <span className="text-[11px] font-mono font-medium px-2.5 py-1 rounded-md bg-stone-100/80 text-stone-600 flex items-center gap-1.5 flex-shrink-0">
-                          <Clock size={12} className="text-stone-400" />
-                          {task.tat}
-                        </span>
-                      </div>
+                        {/* Details text */}
+                        {task.details && (
+                          <p className="text-xs text-stone-600 leading-relaxed pl-9.5">
+                            {task.details}
+                          </p>
+                        )}
 
-                      {/* Details text (Readable & spacious) */}
-                      {task.details && (
-                        <p className="text-xs text-stone-600 leading-relaxed pl-9.5">
-                          {task.details}
-                        </p>
-                      )}
+                        {/* Metadata & Assignee Selector Bar */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-stone-100 pl-9.5 text-xs text-stone-500">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`text-[11px] font-semibold px-2 py-0.5 rounded-md border ${meta.badge}`}
+                            >
+                              {meta.label}
+                            </span>
 
-                      {/* Metadata bar */}
-                      <div className="flex items-center justify-between pt-2 border-t border-stone-100 pl-9.5 text-xs text-stone-500">
-                        <div className="flex items-center gap-2">
-                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md border ${meta.badge}`}>
-                            {meta.label}
-                          </span>
-                          <span className="flex items-center gap-1.5 text-stone-700 font-medium">
-                            <User size={12} className="text-stone-400" />
-                            {task.assignee}
-                            {task.role ? <span className="text-stone-400 font-normal">({task.role})</span> : ""}
-                          </span>
+                            {/* Interactive Assignee Dropdown */}
+                            <div className="relative">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setEditingAssigneeTaskId(
+                                    isEditingAssignee ? null : task.id
+                                  )
+                                }
+                                className="flex items-center gap-1.5 text-stone-800 font-medium px-2 py-0.5 rounded-md hover:bg-stone-100 transition-colors border border-transparent hover:border-stone-200 cursor-pointer"
+                                title="Click to reassign task owner"
+                              >
+                                <User size={12} className="text-stone-400" />
+                                <span>{task.assignee}</span>
+                                {task.role && (
+                                  <span className="text-stone-400 font-normal">
+                                    ({task.role})
+                                  </span>
+                                )}
+                                <CaretDown size={10} className="text-stone-400 ml-0.5" />
+                              </button>
+
+                              {/* Dropdown Menu */}
+                              {isEditingAssignee && (
+                                <>
+                                  <div
+                                    className="fixed inset-0 z-30"
+                                    onClick={() => setEditingAssigneeTaskId(null)}
+                                  />
+                                  <div className="absolute left-0 bottom-full mb-1 z-40 w-64 bg-white rounded-xl shadow-xl border border-stone-200 p-1.5 text-xs max-h-56 overflow-y-auto">
+                                    <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-stone-400 border-b border-stone-100">
+                                      Reassign Team SPOC
+                                    </div>
+                                    <div className="py-1 space-y-0.5">
+                                      {BIGCITY_TEAM.map((member) => (
+                                        <button
+                                          key={member.name}
+                                          type="button"
+                                          onClick={() => {
+                                            handleUpdateTaskField(task.id, {
+                                              assignee: member.name,
+                                              role: member.role,
+                                            });
+                                            setEditingAssigneeTaskId(null);
+                                          }}
+                                          className={`w-full text-left px-2 py-1.5 rounded-lg flex items-center justify-between hover:bg-stone-100 transition-colors cursor-pointer ${
+                                            task.assignee === member.name
+                                              ? "bg-amber-50 text-amber-900 font-bold"
+                                              : "text-stone-700"
+                                          }`}
+                                        >
+                                          <div>
+                                            <div className="font-semibold">{member.name}</div>
+                                            <div className="text-[10px] text-stone-400">
+                                              {member.role}
+                                            </div>
+                                          </div>
+                                          {task.assignee === member.name && (
+                                            <Check size={12} className="text-amber-600 font-bold" />
+                                          )}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Urgency Selector */}
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextUrgency =
+                                  task.urgency === "HIGHEST"
+                                    ? "HIGH"
+                                    : task.urgency === "HIGH"
+                                    ? "MEDIUM"
+                                    : task.urgency === "MEDIUM"
+                                    ? "NORMAL"
+                                    : "HIGHEST";
+                                handleUpdateTaskField(task.id, {
+                                  urgency: nextUrgency as AspectTask["urgency"],
+                                });
+                              }}
+                              className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-colors cursor-pointer ${
+                                task.urgency === "HIGHEST"
+                                  ? "bg-rose-50 text-rose-800 border-rose-200 font-bold"
+                                  : task.urgency === "HIGH"
+                                  ? "bg-amber-50 text-amber-800 border-amber-200 font-semibold"
+                                  : "bg-stone-50 text-stone-600 border-stone-200/80"
+                              }`}
+                              title="Click to toggle priority urgency"
+                            >
+                              {task.urgency}
+                            </button>
+                          </div>
                         </div>
-
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-stone-50 text-stone-500 border border-stone-200/60">
-                          {task.urgency}
-                        </span>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
+              )}
             </div>
           </div>
         )}
       </div>
+
+      {/* ADD TASK MODAL */}
+      <AnimatePresence>
+        {isAddTaskModalOpen && (
+          <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsAddTaskModalOpen(false)}
+              className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs"
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl z-10 border border-stone-200 overflow-hidden"
+            >
+              <div className="px-6 py-4 border-b border-stone-100 bg-stone-50/70 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-stone-900 text-white flex items-center justify-center">
+                    <Plus size={14} weight="bold" />
+                  </div>
+                  <h3 className="text-sm font-bold text-stone-900">Add Task to Project Plan</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsAddTaskModalOpen(false)}
+                  className="text-stone-400 hover:text-stone-700 cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4 text-xs">
+                <div>
+                  <label className="block text-[11px] font-bold text-stone-700 uppercase tracking-wider mb-1">
+                    Task Title
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Partner NDA & Terms Sign-Off"
+                    value={newTaskForm.title}
+                    onChange={(e) => setNewTaskForm({ ...newTaskForm, title: e.target.value })}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:border-amber-500 focus:bg-white text-xs text-stone-900"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-stone-700 uppercase tracking-wider mb-1">
+                      Aspect
+                    </label>
+                    <select
+                      value={newTaskForm.aspect}
+                      onChange={(e) => {
+                        const asp = e.target.value as any;
+                        const defaultAssignee =
+                          asp === "legal"
+                            ? "Akash Verma"
+                            : asp === "compliance"
+                            ? "Khaleel Ahmed"
+                            : asp === "accounting"
+                            ? "Sneha Nair"
+                            : "Sachin (Tech Team)";
+                        const member = BIGCITY_TEAM.find((m) => m.name === defaultAssignee);
+                        setNewTaskForm({
+                          ...newTaskForm,
+                          aspect: asp,
+                          assignee: defaultAssignee,
+                          role: member ? member.role : "Lead",
+                        });
+                      }}
+                      className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:border-amber-500 text-xs text-stone-900"
+                    >
+                      <option value="legal">Legal</option>
+                      <option value="compliance">Compliance</option>
+                      <option value="accounting">Accounting</option>
+                      <option value="implementation">Tech & Ops</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-stone-700 uppercase tracking-wider mb-1">
+                      Assignee (SPOC)
+                    </label>
+                    <select
+                      value={newTaskForm.assignee}
+                      onChange={(e) => {
+                        const member = BIGCITY_TEAM.find((m) => m.name === e.target.value);
+                        setNewTaskForm({
+                          ...newTaskForm,
+                          assignee: e.target.value,
+                          role: member ? member.role : "Lead",
+                        });
+                      }}
+                      className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:border-amber-500 text-xs text-stone-900"
+                    >
+                      {BIGCITY_TEAM.map((m) => (
+                        <option key={m.name} value={m.name}>
+                          {m.name} ({m.role})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-stone-700 uppercase tracking-wider mb-1">
+                      Turnaround Time (TAT)
+                    </label>
+                    <select
+                      value={newTaskForm.tat}
+                      onChange={(e) => setNewTaskForm({ ...newTaskForm, tat: e.target.value })}
+                      className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:border-amber-500 text-xs text-stone-900"
+                    >
+                      <option value="1 Day">1 Day</option>
+                      <option value="2 Days">2 Days</option>
+                      <option value="3 Days">3 Days</option>
+                      <option value="5 Days">5 Days</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-stone-700 uppercase tracking-wider mb-1">
+                      Urgency
+                    </label>
+                    <select
+                      value={newTaskForm.urgency}
+                      onChange={(e) => setNewTaskForm({ ...newTaskForm, urgency: e.target.value as any })}
+                      className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:border-amber-500 text-xs text-stone-900"
+                    >
+                      <option value="HIGHEST">HIGHEST</option>
+                      <option value="HIGH">HIGH</option>
+                      <option value="MEDIUM">MEDIUM</option>
+                      <option value="NORMAL">NORMAL</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-stone-700 uppercase tracking-wider mb-1">
+                    Details / Deliverable
+                  </label>
+                  <textarea
+                    rows={3}
+                    placeholder="Describe SOP requirements, deliverables, or criteria..."
+                    value={newTaskForm.details}
+                    onChange={(e) => setNewTaskForm({ ...newTaskForm, details: e.target.value })}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:border-amber-500 focus:bg-white text-xs text-stone-900"
+                  />
+                </div>
+              </div>
+
+              <div className="px-6 py-3.5 bg-stone-50 border-t border-stone-200 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddTaskModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-stone-600 hover:bg-stone-200 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateNewTask}
+                  disabled={!newTaskForm.title.trim()}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-stone-900 hover:bg-amber-700 disabled:opacity-40 text-white text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                >
+                  <Plus size={14} weight="bold" />
+                  <span>Add to Plan</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
