@@ -15,9 +15,10 @@ import {
 
 interface ThinkingProcessProps {
   elapsedTime?: number;
+  mode?: "plan" | "chat";
 }
 
-const THINKING_STEPS = [
+const PLAN_THINKING_STEPS = [
   {
     id: "zoho",
     title: "Querying Zoho CRM & Suite",
@@ -56,10 +57,32 @@ const THINKING_STEPS = [
   },
 ];
 
-export default function ThinkingProcess({ elapsedTime = 0 }: ThinkingProcessProps) {
+const CHAT_THINKING_STEPS = [
+  {
+    id: "supabase",
+    title: "Searching Supabase Vector Knowledge Base",
+    desc: "Retrieving campaign precedents and SOPs",
+    icon: Brain,
+    color: "text-sky-600",
+    bg: "bg-sky-50",
+    border: "border-sky-200",
+  },
+  {
+    id: "synthesis",
+    title: "Generating Response",
+    desc: "Synthesizing answer based on BCP guidelines",
+    icon: Sparkle,
+    color: "text-indigo-600",
+    bg: "bg-indigo-50",
+    border: "border-indigo-200",
+  },
+];
+
+export default function ThinkingProcess({ elapsedTime = 0, mode = "plan" }: ThinkingProcessProps) {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isExpanded, setIsExpanded] = useState(true);
   const [seconds, setSeconds] = useState(elapsedTime);
+  const steps = mode === "plan" ? PLAN_THINKING_STEPS : CHAT_THINKING_STEPS;
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -70,12 +93,12 @@ export default function ThinkingProcess({ elapsedTime = 0 }: ThinkingProcessProp
 
   useEffect(() => {
     const stepInterval = setInterval(() => {
-      setCurrentStepIndex((prev) => (prev < THINKING_STEPS.length - 1 ? prev + 1 : prev));
+      setCurrentStepIndex((prev) => (prev < steps.length - 1 ? prev + 1 : prev));
     }, 1200);
     return () => clearInterval(stepInterval);
-  }, []);
+  }, [steps.length]);
 
-  const currentStep = THINKING_STEPS[currentStepIndex] || THINKING_STEPS[0];
+  const currentStep = steps[currentStepIndex] || steps[0];
 
   return (
     <motion.div
@@ -86,7 +109,6 @@ export default function ThinkingProcess({ elapsedTime = 0 }: ThinkingProcessProp
       className="max-w-3xl w-full my-3"
     >
       <div className="rounded-2xl bg-white border border-slate-200/90 shadow-[0_4px_20px_-2px_rgba(15,23,42,0.06)] overflow-hidden">
-        {/* Header Bar */}
         <div
           onClick={() => setIsExpanded(!isExpanded)}
           className="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-slate-50/80 transition-colors border-b border-slate-100"
@@ -97,7 +119,7 @@ export default function ThinkingProcess({ elapsedTime = 0 }: ThinkingProcessProp
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[13px] font-semibold tracking-tight text-slate-900">
-                Thinking & Processing Brief
+                {mode === "plan" ? "Thinking & Processing Brief" : "Processing Query"}
               </span>
               <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200/80 tabular-nums font-medium">
                 {seconds.toFixed(1)}s
@@ -107,7 +129,7 @@ export default function ThinkingProcess({ elapsedTime = 0 }: ThinkingProcessProp
 
           <div className="flex items-center gap-2">
             <span className="text-[11.5px] text-slate-500 hidden sm:inline font-medium">
-              Stage {Math.min(currentStepIndex + 1, THINKING_STEPS.length)} of {THINKING_STEPS.length}
+              Stage {Math.min(currentStepIndex + 1, steps.length)} of {steps.length}
             </span>
             <button
               type="button"
@@ -137,7 +159,7 @@ export default function ThinkingProcess({ elapsedTime = 0 }: ThinkingProcessProp
               transition={{ duration: 0.25 }}
               className="p-4 space-y-2"
             >
-              {THINKING_STEPS.map((step, idx) => {
+              {steps.map((step, idx) => {
                 const isCurrent = idx === currentStepIndex;
                 const isPassed = idx < currentStepIndex;
                 const IconComponent = step.icon;

@@ -148,6 +148,9 @@ export default function CopilotView({
   // Inline edit state
   const [editingAssigneeTaskId, setEditingAssigneeTaskId] = useState<string | null>(null);
 
+  const [isPlanPanelOpen, setIsPlanPanelOpen] = useState(false);
+  const [riskDigest, setRiskDigest] = useState<any>(null);
+
   // Add Task form state
   const [newTaskForm, setNewTaskForm] = useState({
     title: "",
@@ -193,6 +196,22 @@ export default function CopilotView({
   useEffect(() => {
     scrollToBottom();
   }, [messages, isThinking, workingPlan, scrollToBottom]);
+
+  // Fetch Risk Digest on mount
+  useEffect(() => {
+    const fetchRiskDigest = async () => {
+      try {
+        const res = await fetch("/api/risk-digest");
+        if (res.ok) {
+          const data = await res.json();
+          setRiskDigest(data);
+        }
+      } catch (e) {
+        console.error("Failed to fetch risk digest", e);
+      }
+    };
+    fetchRiskDigest();
+  }, []);
 
   // Intake initial plan context from Campaigns wizard
   useEffect(() => {
@@ -389,6 +408,33 @@ export default function CopilotView({
     });
   };
 
+  type UserIntent = "plan_create" | "plan_modify" | "plan_approve" | "conversational";
+
+  const classifyIntent = (message: string, hasActivePlan: boolean): UserIntent => {
+    const lower = message.toLowerCase().trim();
+    
+    if (hasActivePlan) {
+      if (/^(yes|yep|approve|looks good|push|sync|go ahead|proceed|push to zoho|approve and push|accept)/i.test(lower)) {
+        return "plan_approve";
+      }
+      const modSignals = /\b(assign|reassign|change|update|set|remove|delete|add task|modify|adjust)\b/i;
+      if (modSignals.test(lower)) return "plan_modify";
+    }
+
+    const hasCreationVerb = /\b(create|generate|build|plan|launch|design|draft|set up|prepare)\b/i.test(lower);
+    const hasCampaignNoun = /\b(campaign|plan|brief|promotion)\b/i.test(lower);
+    const hasSpecificBrand = /\b(nestl|cadbury|pepsi|tata|coca.?cola|britannia|itc|mondelez|pepsico|hindustan)\b/i.test(lower);
+    const hasExclusionSignal = /\b(example|explain|what is|show me|tell me|how does|list|describe|difference|compare|define|meaning|guide|help|about)\b/i.test(lower);
+
+    if (hasExclusionSignal) return "conversational";
+
+    if (hasCreationVerb && (hasCampaignNoun || hasSpecificBrand)) {
+      return "plan_create";
+    }
+
+    return "conversational";
+  };
+
   const sendMessage = useCallback(
     async (content: string) => {
       userHasScrolledUpRef.current = false;
@@ -399,29 +445,26 @@ export default function CopilotView({
         timestamp: new Date(),
       };
 
-      setSession((prev) => ({
-        ...prev,
-        messages: [...prev.messages, userMessage],
-        title:
-          prev.messages.length === 0
-            ? deriveTitle([...prev.messages, userMessage])
-            : prev.title,
-      }));
+      setSession((prev) => {
+        const newMessages = [...prev.messages, userMessage];
+        return {
+          ...prev,
+          messages: newMessages,
+          title: prev.messages.length === 0 ? deriveTitle(newMessages) : prev.title,
+        };
+      });
 
-      // Check if user is approving the active plan
-      const isAffirmative = /^(yes|yep|approve|looks good|push|sync|go ahead|proceed|push to zoho|approve and push|accept)/i.test(
-        content.trim()
-      );
+      const intent = classifyIntent(content, !!(workingPlan && workingPlan.status !== "live"));
 
-      if (workingPlan && workingPlan.status !== "live" && isAffirmative) {
+      if (intent === "plan_approve") {
         await handleApprovePlanToZoho();
         return;
       }
 
-      // Check if user request contains plan modification intent (e.g. "assign all legal tasks to Akash Verma")
       let planModified = false;
       let modificationSummary = "";
-      if (workingPlan && workingPlan.status !== "live") {
+
+      if (intent === "plan_modify" && workingPlan) {
         const modResult = applyPlanModifications(
           workingPlan.tasks,
           workingPlan.campaignData,
@@ -432,7 +475,6 @@ export default function CopilotView({
           planModified = true;
           modificationSummary = modResult.summaryMarkdown;
 
-          // Update working plan state inline immediately
           setWorkingPlan((prev) => {
             if (!prev) return null;
             return {
@@ -442,82 +484,82 @@ export default function CopilotView({
             };
           });
 
-          // Highlight the modified tasks
+          setIsPlanPanelOpen(true);
           setHighlightedTaskIds(modResult.modifiedTaskIds);
-          setTimeout(() => setHighlightedTaskIds([]), 4500);
-          showToast(`Plan updated inline: ${modResult.modifiedTaskIds.length} tasks modified`, "sparkle");
+          setTimeout(() => setHighlightedTaskIds([]), 6000);
+          showToast(`✨ Updated ${modResult.modifiedTaskIds.length} tasks — panel opened`, "sparkle");
+
+          // Auto-scroll logic could be added here if needed, but for now we open the panel.
         }
-      } else if (!workingPlan) {
-        // Automatically detect new campaign briefing intent and initialize 4-aspect studio plan canvas
-        const isPlanBrief = /(create|plan|generate|launch|aspect|campaign|scratch|cashback|voucher|festive|nestl|cadbury|pepsi|tata)/i.test(content);
-        if (isPlanBrief) {
-          const isNestle = /nestl/i.test(content);
-          const isCadbury = /cadbury|mondelez/i.test(content);
-          const isPepsi = /pepsi/i.test(content);
-          const isTata = /tata/i.test(content);
+      } else if (!workingPlan && intent === "plan_create") {
+        const isNestle = /nestl/i.test(content);
+        const isCadbury = /cadbury|mondelez/i.test(content);
+        const isPepsi = /pepsi/i.test(content);
+        const isTata = /tata/i.test(content);
 
-          const defaultName = isNestle
-            ? "Nestlé Festive Scratch & Win ₹25 Lakh Campaign"
-            : isCadbury
-            ? "Mondelez Cadbury Silk Valentine's ₹100 Assured Cashback"
-            : isPepsi
-            ? "Pepsi UEFA Champions League ₹200 Zomato Dining Pass"
-            : isTata
-            ? "Tata Tea Gold ₹50 Amazon Pay Assured Reward"
-            : deriveTitle([{ role: "user", content, id: "1", timestamp: new Date() }]);
+        const defaultName = isNestle
+          ? "Nestlé Festive Scratch & Win ₹25 Lakh Campaign"
+          : isCadbury
+          ? "Mondelez Cadbury Silk Valentine's ₹100 Assured Cashback"
+          : isPepsi
+          ? "Pepsi UEFA Champions League ₹200 Zomato Dining Pass"
+          : isTata
+          ? "Tata Tea Gold ₹50 Amazon Pay Assured Reward"
+          : deriveTitle([{ role: "user", content, id: "1", timestamp: new Date() }]);
 
-          const defaultClient = isNestle
-            ? "Nestlé India Ltd"
-            : isCadbury
-            ? "Mondelez India Foods Pvt Ltd"
-            : isPepsi
-            ? "PepsiCo India Holdings"
-            : isTata
-            ? "Tata Consumer Products"
-            : "Enterprise Client";
+        const defaultClient = isNestle
+          ? "Nestlé India Ltd"
+          : isCadbury
+          ? "Mondelez India Foods Pvt Ltd"
+          : isPepsi
+          ? "PepsiCo India Holdings"
+          : isTata
+          ? "Tata Consumer Products"
+          : "Enterprise Client";
 
-          const defaultBudget = content.includes("25")
-            ? "₹25,00,000"
-            : content.includes("35")
-            ? "₹35,00,000"
-            : content.includes("50")
-            ? "₹50,00,000"
-            : "₹25,00,000";
+        const defaultBudget = content.includes("25")
+          ? "₹25,00,000"
+          : content.includes("35")
+          ? "₹35,00,000"
+          : content.includes("50")
+          ? "₹50,00,000"
+          : "₹25,00,000";
 
-          const defaultVolume = content.includes("100")
-            ? "100,000 packs"
-            : content.includes("350")
-            ? "350,00,000 packs"
-            : content.includes("500")
-            ? "500,000 cans"
-            : "250,000 packs";
+        const defaultVolume = content.includes("100")
+          ? "100,000 packs"
+          : content.includes("350")
+          ? "350,00,000 packs"
+          : content.includes("500")
+          ? "500,000 cans"
+          : "250,000 packs";
 
-          const campaignData = {
-            name: defaultName,
-            client: defaultClient,
-            category: "FMCG",
-            budget: defaultBudget,
-            codeVolume: defaultVolume,
-            rewardType: isCadbury ? "Cashback" : isPepsi || isTata ? "EGV" : "Scratch & Win",
-            startDate: new Date().toISOString().split("T")[0],
-            endDate: new Date(Date.now() + 90 * 86400000).toISOString().split("T")[0],
-            brief: content,
-          };
+        const campaignData = {
+          name: defaultName,
+          client: defaultClient,
+          category: "FMCG",
+          budget: defaultBudget,
+          codeVolume: defaultVolume,
+          rewardType: isCadbury ? "Cashback" : isPepsi || isTata ? "EGV" : "Scratch & Win",
+          startDate: new Date().toISOString().split("T")[0],
+          endDate: new Date(Date.now() + 90 * 86400000).toISOString().split("T")[0],
+          brief: content,
+        };
 
-          const plan = generateAspectPlan(campaignData);
-          setWorkingPlan({
-            campaignData,
-            tasks: plan.tasks,
-            aspectSummary: plan.aspectSummary,
-            status: "draft",
-          });
-          showToast(`Loaded 4-Aspect Plan with ${plan.tasks.length} tasks`, "sparkle");
-        }
+        const plan = generateAspectPlan(campaignData);
+        setWorkingPlan({
+          campaignData,
+          tasks: plan.tasks,
+          aspectSummary: plan.aspectSummary,
+          status: "draft",
+        });
+        setIsPlanPanelOpen(true);
+        showToast(`Loaded 4-Aspect Plan with ${plan.tasks.length} tasks`, "sparkle");
       }
 
-      // Format prompt with context if working on a plan
       let promptToSend = content;
-      if (workingPlan && workingPlan.status !== "live") {
+      
+      const isFirstMessage = session.messages.length === 0;
+      if (workingPlan && workingPlan.status !== "live" && (isFirstMessage || intent === "plan_modify" || intent === "plan_create")) {
         promptToSend = `[Active Working Campaign Context]
 Campaign: ${workingPlan.campaignData.name}
 Client: ${workingPlan.campaignData.client}
@@ -819,8 +861,18 @@ User Request: ${content}`;
           <h1 className="text-[15px] font-bold text-stone-900 tracking-tight">
             {workingPlan ? "Plan Copilot Studio" : "AI Copilot"}
           </h1>
-          {workingPlan ? (
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200">
+          {workingPlan && !isPlanPanelOpen && (
+            <button
+              type="button"
+              onClick={() => setIsPlanPanelOpen(true)}
+              className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors shadow-sm cursor-pointer"
+            >
+              <Sparkle size={13} weight="fill" className="text-indigo-500" />
+              Show Plan ({workingPlan.tasks.length})
+            </button>
+          )}
+          {workingPlan && isPlanPanelOpen ? (
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 hidden sm:inline-flex">
               <Sparkle size={12} weight="fill" className="text-amber-500" />
               Editing: {workingPlan.campaignData.name}
             </span>
@@ -832,15 +884,12 @@ User Request: ${content}`;
         </div>
 
         <div className="flex items-center gap-2">
-          {workingPlan && (
+          {workingPlan && isPlanPanelOpen && (
             <button
-              onClick={() => {
-                if (onClearPlanContext) onClearPlanContext();
-                setWorkingPlan(null);
-              }}
+              onClick={() => setIsPlanPanelOpen(false)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-stone-50 text-stone-600 hover:text-stone-900 transition-colors border border-stone-200 shadow-xs text-xs font-semibold cursor-pointer"
             >
-              <span>Close Plan View</span>
+              <span>Hide Plan</span>
             </button>
           )}
 
@@ -865,12 +914,37 @@ User Request: ${content}`;
         </div>
       </header>
 
+      {/* Proactive Risk Nudge Banner */}
+      {!workingPlan && riskDigest && riskDigest.criticalActionItems && riskDigest.criticalActionItems.length > 0 && (
+        <div className="bg-rose-50 border-b border-rose-200 px-6 py-2.5 flex items-center justify-between z-10 shadow-sm flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-6 h-6 rounded-full bg-rose-100 flex items-center justify-center flex-shrink-0">
+              <ShieldCheck size={14} className="text-rose-600" weight="bold" />
+            </div>
+            <div>
+              <p className="text-[11.5px] font-bold text-rose-900">
+                Action Required: {riskDigest.criticalActionItems[0].deal}
+              </p>
+              <p className="text-[10.5px] font-medium text-rose-700 mt-0.5">
+                {riskDigest.criticalActionItems[0].issue} — Assigned to {riskDigest.criticalActionItems[0].owner}
+              </p>
+            </div>
+          </div>
+          <button 
+            onClick={() => sendMessage(`Show me the plan and risks for ${riskDigest.criticalActionItems[0].deal}`)}
+            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer whitespace-nowrap shadow-xs"
+          >
+            Review Plan
+          </button>
+        </div>
+      )}
+
       {/* Workspace Area: Split-Pane when working on a plan, Full width for normal chat */}
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* LEFT PANE: Chat & Modification Prompt Stream */}
         <div
           className={`flex flex-col h-full min-h-0 transition-all duration-300 ${
-            workingPlan ? "w-full lg:w-[48%] border-r border-stone-200 bg-[#FAFAF9]" : "w-full"
+            workingPlan && isPlanPanelOpen ? "w-full lg:w-[48%] border-r border-stone-200 bg-[#FAFAF9]" : "w-full"
           }`}
         >
           {/* Scrollable messages */}
@@ -890,7 +964,7 @@ User Request: ${content}`;
 
                 {/* Live Thinking Stepper */}
                 <AnimatePresence>
-                  {isThinking && <ThinkingProcess key="thinking" />}
+                  {isThinking && <ThinkingProcess key="thinking" mode={workingPlan && session.messages.length === 1 ? "plan" : "chat"} />}
                 </AnimatePresence>
               </div>
             )}
@@ -899,19 +973,35 @@ User Request: ${content}`;
 
           {/* Chat Input Bar */}
           <div className="p-3.5 bg-white border-t border-stone-200/80 flex-shrink-0 shadow-xs">
-            <div className="max-w-2xl mx-auto">
+            <div className="max-w-2xl mx-auto flex flex-col gap-2">
+              {/* Contextual Suggestion Chips */}
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                {messages.length === 0 ? (
+                  <>
+                    <button onClick={() => sendMessage("Create a plan for a Nestlé campaign")} className="text-[10px] bg-stone-100 hover:bg-stone-200 text-stone-600 px-2.5 py-1 rounded-full font-medium transition-colors cursor-pointer border border-stone-200">Create a plan for a Nestlé campaign</button>
+                    <button onClick={() => sendMessage("What is a scratch & win campaign?")} className="text-[10px] bg-stone-100 hover:bg-stone-200 text-stone-600 px-2.5 py-1 rounded-full font-medium transition-colors cursor-pointer border border-stone-200">What is a scratch & win campaign?</button>
+                  </>
+                ) : workingPlan && workingPlan.status === "draft" ? (
+                  <>
+                    <button onClick={() => sendMessage("Assign all legal tasks to Akash Verma")} className="text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-full font-medium transition-colors cursor-pointer border border-indigo-200">Assign all legal tasks to Akash</button>
+                    <button onClick={() => sendMessage("Suggest improvements")} className="text-[10px] bg-sky-50 hover:bg-sky-100 text-sky-700 px-2.5 py-1 rounded-full font-medium transition-colors cursor-pointer border border-sky-200">Suggest improvements</button>
+                    <button onClick={() => sendMessage("Approve")} className="text-[10px] bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full font-medium transition-colors cursor-pointer border border-emerald-200 flex items-center gap-1"><CheckCircle size={12} weight="fill" /> Approve</button>
+                  </>
+                ) : workingPlan && workingPlan.status === "live" ? (
+                  <>
+                    <button onClick={handleNewChat} className="text-[10px] bg-stone-100 hover:bg-stone-200 text-stone-600 px-2.5 py-1 rounded-full font-medium transition-colors cursor-pointer border border-stone-200">Start new plan</button>
+                  </>
+                ) : null}
+              </div>
+
               <ChatInput
                 onSendMessage={sendMessage}
                 isLoading={isLoading || isPushingToZoho}
                 onStop={handleStop}
               />
-              <div className="flex items-center justify-between text-[11px] text-stone-400 px-1 mt-2">
+              <div className="flex items-center justify-between text-[11px] text-stone-400 px-1 mt-1">
                 <span>
-                  {workingPlan && workingPlan.status !== "live" ? (
-                    <>Try: <code className="text-stone-700 bg-stone-100 px-1 py-0.5 rounded font-mono">assign all legal tasks to Akash Verma</code> or <code className="text-stone-700 bg-stone-100 px-1 py-0.5 rounded font-mono">suggest improvements</code></>
-                  ) : (
-                    <>Press <kbd className="px-1.5 py-0.5 rounded bg-stone-50 border border-stone-200 text-[10px] text-stone-600 font-mono shadow-xs">Enter ↵</kbd> to send</>
-                  )}
+                  Press <kbd className="px-1.5 py-0.5 rounded bg-stone-50 border border-stone-200 text-[10px] text-stone-600 font-mono shadow-xs">Enter ↵</kbd> to send
                 </span>
                 <span className="font-medium text-stone-500">BCP Assist AI (Gemini 3.7)</span>
               </div>

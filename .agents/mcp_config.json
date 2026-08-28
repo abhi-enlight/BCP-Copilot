@@ -1,11 +1,10 @@
 {
   "mcpServers": {
     "n8n-mcp": {
-      "type": "http",
-      "url": "http://localhost:5678/mcp-server/http",
       "headers": {
         "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhNmJhMDAyYS04MGY5LTRmMmItOGRjNS0zMjMxZWE3ZTYxODYiLCJpc3MiOiJuOG4iLCJhdWQiOiJtY3Atc2VydmVyLWFwaSIsImp0aSI6IjdlODBmYWY2LWVkZTctNDRkMS05YTQzLTIyMWZhMGZmN2ZhZSIsImlhdCI6MTc4NzY1ODkzOX0.K7XlxhDd1YzQh6qCa9yEB75v0yhInuqFE1Fm-bHP6ss"
-      }
+      },
+      "serverUrl": "http://localhost:5678/mcp-server/http"
     },
     "ZohoMCP": {
       "command": "npx",
