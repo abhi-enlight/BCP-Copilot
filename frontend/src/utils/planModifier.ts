@@ -47,7 +47,7 @@ export const BIGCITY_TEAM: TeamMember[] = [
   {
     name: "Rohit Sharma",
     role: "Admin & Commercial Head",
-    department: "Enterprise Architecture & SOW",
+    department: "Commercial Operations",
     aspects: ["accounting", "implementation"],
   },
   {
