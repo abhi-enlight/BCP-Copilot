@@ -89,6 +89,7 @@ export interface PlanModificationResult {
     | "update_tat"
     | "update_urgency"
     | "update_metadata"
+    | "improve"
     | "multiple"
     | "none";
 }
@@ -146,7 +147,7 @@ export function findTeamMember(query: string): TeamMember | null {
 }
 
 /**
- * Intelligent Plan Modifier: Inspects prompt and mutates tasks / campaignData
+ * Intelligent Plan Modifier: Inspects user prompt and mutates tasks / campaignData
  */
 export function applyPlanModifications(
   currentTasks: AspectTask[],
@@ -160,7 +161,112 @@ export function applyPlanModifications(
   const changesSummary: string[] = [];
   let actionType: PlanModificationResult["actionType"] = "none";
 
-  // 1. REASSIGNMENT: E.g., "assign all legal tasks to Akash Verma" or "assign legal to Akash Verma"
+  // 1. IMPROVEMENT / OPTIMIZATION INTENT: E.g., "Suggest improvements", "Optimize plan", "Add failover gates"
+  const isImprovementIntent =
+    lower.includes("suggest improvement") ||
+    lower.includes("improve") ||
+    lower.includes("optim") ||
+    lower.includes("recommend") ||
+    lower.includes("best practice") ||
+    lower.includes("enhance") ||
+    lower.includes("concurrency") ||
+    lower.includes("failover");
+
+  if (isImprovementIntent) {
+    const strategicAdditions: Omit<AspectTask, "id" | "sopCode" | "zohoTaskId" | "zohoTaskStatus">[] = [
+      {
+        title: "Dual-Gateway Karix / Gupshup 30s Auto-Failover Setup",
+        aspect: "implementation",
+        assignee: "Sachin (Tech Team)",
+        role: "Tech Lead & Cloud Architect",
+        urgency: "HIGHEST",
+        tat: "1 Day",
+        status: "IN_PROGRESS",
+        details: "Configure primary Karix OTP route with automated 30s fallback to Gupshup to eliminate TV ad spike drop-offs.",
+        verificationRequirement: "Automated failover drill log verification.",
+        mandatoryGate: true,
+      },
+      {
+        title: "Telecom TPS Pre-Warming (TV Commercial Surge Readiness)",
+        aspect: "implementation",
+        assignee: "Sachin (Tech Team)",
+        role: "Tech Lead & Cloud Architect",
+        urgency: "HIGH",
+        tat: "2 Days",
+        status: "PENDING_APPROVAL",
+        details: "Coordinate telecom TPS capacity pre-warming 48 hours prior to national TV commercial air dates.",
+        verificationRequirement: "Telecom operator pre-warming confirmation ticket.",
+        mandatoryGate: true,
+      },
+      {
+        title: "72-Hour Pre-Launch Staging UAT (50-Number Test Matrix across Jio/Airtel/Vi)",
+        aspect: "compliance",
+        assignee: "Khaleel Ahmed",
+        role: "Compliance SPOC / Ops Lead",
+        urgency: "HIGHEST",
+        tat: "2 Days",
+        status: "PENDING_APPROVAL",
+        details: "Execute mandatory 50-number test matrix across iOS, Android, and mobile web on all Tier-1 telecom networks.",
+        verificationRequirement: "Complete UAT sign-off matrix report with zero critical blockers.",
+        mandatoryGate: true,
+      },
+      {
+        title: "Partner Brand Consent Written Sign-Off (3 Days Prior to Print)",
+        aspect: "legal",
+        assignee: "Akash Verma",
+        role: "Legal Counsel",
+        urgency: "HIGHEST",
+        tat: "2 Days",
+        status: "PENDING_APPROVAL",
+        details: "Secure formal written email sign-off for brand logo assets on packaging & POSM before releasing print run.",
+        verificationRequirement: "Partner Brand Marketing SPOC signed approval email.",
+        mandatoryGate: true,
+      },
+      {
+        title: "100% Advance Payment Matching in Zoho Books (Escrow Protection)",
+        aspect: "accounting",
+        assignee: "Sneha Nair",
+        role: "Finance Lead",
+        urgency: "HIGHEST",
+        tat: "1 Day",
+        status: "PENDING_APPROVAL",
+        details: "Ensure 100% advance client deposit is reconciled against Zoho Books receipt voucher before voucher PO release.",
+        verificationRequirement: "Zoho Books matched receipt voucher #.",
+        mandatoryGate: true,
+      },
+    ];
+
+    let addedCount = 0;
+    for (const item of strategicAdditions) {
+      const alreadyExists = tasks.some(
+        (t) => t.title.toLowerCase().includes(item.title.toLowerCase().slice(0, 20))
+      );
+      if (!alreadyExists) {
+        const count = tasks.filter((t) => t.aspect === item.aspect).length + 1;
+        const sopCode = `SOP-${item.aspect.slice(0, 3).toUpperCase()}-0${count}`;
+        const newId = `task-opt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const newTask: AspectTask = {
+          ...item,
+          id: newId,
+          sopCode,
+          zohoTaskId: `ZP-T-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoTaskStatus: "Open",
+        };
+        tasks.push(newTask);
+        modifiedTaskIds.push(newId);
+        addedCount++;
+      }
+    }
+
+    if (addedCount > 0) {
+      changesSummary.push(
+        `• Added **${addedCount} Strategic AI Optimization Tasks** across Failover, UAT Staging, Escrow & Compliance gates.`
+      );
+      actionType = "improve";
+    }
+  }
+
+  // 2. REASSIGNMENT: E.g., "assign all legal tasks to Akash Verma" or "assign legal to Akash"
   const isReassignIntent =
     lower.includes("assign") ||
     lower.includes("reassign") ||
@@ -202,7 +308,7 @@ export function applyPlanModifications(
       changesSummary.push(
         `• **${tasks[specificIndex].sopCode} (${tasks[specificIndex].title})**: Reassigned from _${oldAssignee}_ → **${targetAssigneeName}** (${targetRole})`
       );
-      actionType = "reassign";
+      actionType = actionType === "none" ? "reassign" : "multiple";
     } else if (targetAspect) {
       // Bulk aspect reassignment (e.g., "assign all legal tasks to Akash Verma")
       let count = 0;
@@ -223,7 +329,7 @@ export function applyPlanModifications(
         changesSummary.push(
           `• Reassigned **all ${count} ${targetAspect.toUpperCase()} tasks** to **${targetAssigneeName}** (${targetRole})`
         );
-        actionType = "reassign";
+        actionType = actionType === "none" ? "reassign" : "multiple";
       }
     } else if (targetMember) {
       // General match: reassign tasks matching targetMember's primary aspect or first matching
@@ -244,12 +350,12 @@ export function applyPlanModifications(
         changesSummary.push(
           `• Reassigned **${count} matching tasks** to **${targetMember.name}** (${targetMember.role})`
         );
-        actionType = "reassign";
+        actionType = actionType === "none" ? "reassign" : "multiple";
       }
     }
   }
 
-  // 2. TAT / DEADLINE MODIFICATIONS: E.g., "change legal tasks TAT to 1 day", "set task 2 TAT to 3 days"
+  // 3. TAT / DEADLINE MODIFICATIONS: E.g., "change legal tasks TAT to 1 day", "set task 2 TAT to 3 days"
   const isTatIntent =
     lower.includes("tat") ||
     lower.includes("deadline") ||
@@ -260,7 +366,6 @@ export function applyPlanModifications(
     lower.includes("duration");
 
   if (isTatIntent) {
-    // Extract days
     const daysMatch = lower.match(/(\d+)\s*(?:working\s*)?(?:day|days|h|hours|hr|hrs)/i);
     let newTat = "2 Days";
     if (daysMatch) {
@@ -310,7 +415,7 @@ export function applyPlanModifications(
     }
   }
 
-  // 3. URGENCY MODIFICATIONS: E.g., "set compliance urgency to HIGHEST" or "mark task 3 as NORMAL"
+  // 4. URGENCY MODIFICATIONS: E.g., "set compliance urgency to HIGHEST" or "mark task 3 as NORMAL"
   const isUrgencyIntent =
     lower.includes("urgency") ||
     lower.includes("priority") ||
@@ -318,7 +423,7 @@ export function applyPlanModifications(
     lower.includes("critical") ||
     lower.includes("urgent");
 
-  if (isUrgencyIntent) {
+  if (isUrgencyIntent && !isImprovementIntent) {
     let newUrgency: AspectTask["urgency"] = "HIGH";
     if (lower.includes("highest") || lower.includes("critical") || lower.includes("p0")) {
       newUrgency = "HIGHEST";
@@ -368,7 +473,7 @@ export function applyPlanModifications(
     }
   }
 
-  // 4. TASK DELETION: E.g., "delete task 3", "remove task 2", "remove the lottery task"
+  // 5. TASK DELETION: E.g., "delete task 3", "remove task 2"
   const isDeleteIntent =
     lower.startsWith("delete ") ||
     lower.startsWith("remove ") ||
@@ -388,7 +493,6 @@ export function applyPlanModifications(
       );
       actionType = actionType === "none" ? "delete_task" : "multiple";
     } else {
-      // Match by keyword in title
       const keywords = lower
         .replace(/^(delete|remove|drop)\s+(task\s+)?/i, "")
         .trim();
@@ -410,7 +514,7 @@ export function applyPlanModifications(
     }
   }
 
-  // 5. TASK ADDITION: E.g., "add a compliance task for TRAI DLT 48h soak testing"
+  // 6. TASK ADDITION: E.g., "add a compliance task for TRAI DLT 48h soak testing"
   const isAddIntent =
     (lower.startsWith("add ") ||
       lower.includes("add a task") ||
@@ -418,7 +522,8 @@ export function applyPlanModifications(
       lower.includes("create task") ||
       lower.includes("include task") ||
       lower.includes("add task")) &&
-    !isReassignIntent;
+    !isReassignIntent &&
+    !isImprovementIntent;
 
   if (isAddIntent) {
     let aspect: "legal" | "compliance" | "accounting" | "implementation" = "implementation";
@@ -439,7 +544,6 @@ export function applyPlanModifications(
         ? BIGCITY_TEAM.find((m) => m.name.includes("Sneha")) || BIGCITY_TEAM[5]
         : BIGCITY_TEAM.find((m) => m.name.includes("Sachin")) || BIGCITY_TEAM[4];
 
-    // Clean title
     let title = input
       .replace(/^(please\s+|can\s+you\s+|kindly\s+)?(add|create|include)\s+(a\s+)?(new\s+)?(task\s+)?(for\s+|to\s+)?/i, "")
       .replace(/^(legal|compliance|accounting|tech|implementation)\s+(task\s+)?(for\s+|to\s+)?/i, "")
@@ -484,7 +588,7 @@ export function applyPlanModifications(
     actionType = actionType === "none" ? "add_task" : "multiple";
   }
 
-  // 6. CAMPAIGN LEVEL FIELD MODIFICATIONS: Budget, Volume, Client
+  // 7. CAMPAIGN LEVEL FIELD MODIFICATIONS: Budget, Volume, Client
   const isBudgetChange = lower.includes("budget") && (lower.includes("lakh") || lower.includes("cr") || lower.includes("₹") || lower.includes("inr") || lower.includes("change budget to"));
   if (isBudgetChange) {
     const budgetMatch = input.match(/(?:₹|inr|rs\.?)?\s*([0-9,.]+)\s*(?:lakhs?|lac|cr|crore|k|m)?/i);
@@ -508,7 +612,6 @@ export function applyPlanModifications(
 
   const hasModifications = changesSummary.length > 0;
 
-  // Build formatted markdown confirmation summary
   let summaryMarkdown = "";
   if (hasModifications) {
     summaryMarkdown = `**Plan Successfully Updated Inline**\n\nI've modified the active project plan for **${updatedCampaign.name || "this campaign"}** based on your instruction:\n\n${changesSummary.join("\n")}\n\n**Current Milestone Breakdown:**\n* **Legal**: ${tasks.filter((t) => t.aspect === "legal").length} Tasks (Owner: ${tasks.find((t) => t.aspect === "legal")?.assignee || "Legal SPOC"})\n* **Compliance**: ${tasks.filter((t) => t.aspect === "compliance").length} Tasks\n* **Accounting**: ${tasks.filter((t) => t.aspect === "accounting").length} Tasks\n* **Tech & Ops**: ${tasks.filter((t) => t.aspect === "implementation").length} Tasks\n\nAll changes are reflected live on the right pane. Ready to push to Zoho Projects when you are!`;
@@ -522,4 +625,105 @@ export function applyPlanModifications(
     summaryMarkdown,
     actionType,
   };
+}
+
+/**
+ * Parses markdown tables, task bullet points, or structured SOP items from AI response text
+ * and merges any newly generated/updated tasks into the current task list.
+ */
+export function syncTasksFromAIResponse(
+  responseText: string,
+  currentTasks: AspectTask[]
+): { updatedTasks: AspectTask[]; modifiedIds: string[] } {
+  if (!responseText || responseText.length < 50) {
+    return { updatedTasks: currentTasks, modifiedIds: [] };
+  }
+
+  let tasks = [...currentTasks];
+  const modifiedIds: string[] = [];
+
+  // Match Markdown table rows: | SOP-LEG-01 | Title | Aspect | Assignee | TAT | Urgency |
+  const lines = responseText.split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("|") || trimmed.includes("---") || trimmed.toLowerCase().includes("sop code")) {
+      continue;
+    }
+
+    const cells = trimmed
+      .split("|")
+      .map((c) => c.trim())
+      .filter((c, idx, arr) => idx > 0 && idx < arr.length - 1);
+
+    if (cells.length >= 3) {
+      const codeOrTitle = cells[0];
+      const titleOrAspect = cells[1];
+      const aspectOrAssignee = cells[2];
+      const assigneeOrTat = cells[3] || "";
+      const tatOrUrgency = cells[4] || "";
+
+      // Check if row contains a recognizable SOP or task
+      const sopMatch = (codeOrTitle + " " + titleOrAspect).match(/SOP-([A-Z]{3})-\d+/i);
+      const isLegal = /legal|t&c|consent/i.test(trimmed);
+      const isComp = /comp|dlt|trai|uat/i.test(trimmed);
+      const isAcc = /acc|finance|escrow|invoice/i.test(trimmed);
+      const aspect: AspectTask["aspect"] = isLegal ? "legal" : isComp ? "compliance" : isAcc ? "accounting" : "implementation";
+
+      const title = titleOrAspect.replace(/[*_`]/g, "").trim() || codeOrTitle.replace(/[*_`]/g, "").trim();
+      if (title.length > 5 && !title.toLowerCase().includes("task name") && !title.toLowerCase().includes("header")) {
+        const existingIdx = tasks.findIndex(
+          (t) => t.title.toLowerCase().includes(title.toLowerCase().slice(0, 15)) ||
+                 (sopMatch && t.sopCode.toLowerCase() === sopMatch[0].toLowerCase())
+        );
+
+        const member = findTeamMember(trimmed) || (
+          aspect === "legal"
+            ? BIGCITY_TEAM[0]
+            : aspect === "compliance"
+            ? BIGCITY_TEAM[3]
+            : aspect === "accounting"
+            ? BIGCITY_TEAM[5]
+            : BIGCITY_TEAM[4]
+        );
+
+        if (existingIdx >= 0) {
+          // Update existing task if assignee or TAT is specified
+          const current = tasks[existingIdx];
+          const hasNewAssignee = member && member.name !== current.assignee && trimmed.includes(member.name.split(" ")[0]);
+          if (hasNewAssignee) {
+            tasks[existingIdx] = {
+              ...current,
+              assignee: member.name,
+              role: member.role,
+            };
+            modifiedIds.push(current.id);
+          }
+        } else {
+          // Insert newly generated task
+          const sopCode = sopMatch ? sopMatch[0].toUpperCase() : `SOP-${aspect.slice(0, 3).toUpperCase()}-0${tasks.filter((t) => t.aspect === aspect).length + 1}`;
+          const newId = `task-ai-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+          const newTask: AspectTask = {
+            id: newId,
+            sopCode,
+            title: title.slice(0, 65),
+            aspect,
+            assignee: member.name,
+            role: member.role,
+            urgency: /highest|critical|urgent/i.test(trimmed) ? "HIGHEST" : /medium/i.test(trimmed) ? "MEDIUM" : "HIGH",
+            tat: /1\s*day|24h/i.test(trimmed) ? "1 Day" : /3\s*day/i.test(trimmed) ? "3 Days" : "2 Days",
+            status: "PENDING_APPROVAL",
+            zohoTaskId: `ZP-T-${Math.floor(100000 + Math.random() * 900000)}`,
+            zohoTaskStatus: "Open",
+            details: trimmed,
+            verificationRequirement: `${member.role} sign-off required prior to Go-Live`,
+            mandatoryGate: true,
+          };
+          tasks.push(newTask);
+          modifiedIds.push(newId);
+        }
+      }
+    }
+  }
+
+  return { updatedTasks: tasks, modifiedIds };
 }

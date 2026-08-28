@@ -35,6 +35,7 @@ import { type PlanContextForCopilot } from "@/app/page";
 import { type AspectTask, type Campaign, generateAspectPlan } from "@/app/api/campaigns/route";
 import {
   applyPlanModifications,
+  syncTasksFromAIResponse,
   BIGCITY_TEAM,
   type TeamMember,
 } from "@/utils/planModifier";
@@ -417,7 +418,7 @@ export default function CopilotView({
       if (/^(yes|yep|approve|looks good|push|sync|go ahead|proceed|push to zoho|approve and push|accept)/i.test(lower)) {
         return "plan_approve";
       }
-      const modSignals = /\b(assign|reassign|change|update|set|remove|delete|add task|modify|adjust)\b/i;
+      const modSignals = /\b(assign|reassign|change|update|set|remove|delete|add|modify|adjust|improve|suggest|optim|recommend|enhance|failover|concurrency|tat|deadline|urgency|priority|budget|volume)\b/i;
       if (modSignals.test(lower)) return "plan_modify";
     }
 
@@ -710,6 +711,23 @@ User Request: ${content}`;
               } catch {}
             }
 
+            // Dynamically sync tasks from AI response into right canvas
+            if (accumulatedContent) {
+              setWorkingPlan((prev) => {
+                if (!prev) return null;
+                const { updatedTasks, modifiedIds } = syncTasksFromAIResponse(
+                  accumulatedContent,
+                  prev.tasks
+                );
+                if (modifiedIds.length > 0) {
+                  setHighlightedTaskIds(modifiedIds);
+                  setTimeout(() => setHighlightedTaskIds([]), 5000);
+                  showToast(`✨ Synced ${modifiedIds.length} tasks from AI`, "sparkle");
+                }
+                return { ...prev, tasks: updatedTasks };
+              });
+            }
+
             // Ensure assistant message is ALWAYS rendered even if streaming ended cleanly without prior chunks
             if (!firstChunkReceived) {
               setIsThinking(false);
@@ -744,6 +762,22 @@ User Request: ${content}`;
           let outputText = data.text || data.output || data.content || data.error || "";
           if (planModified && modificationSummary) {
             outputText = `${modificationSummary}\n\n---\n${outputText}`;
+          }
+
+          if (outputText) {
+            setWorkingPlan((prev) => {
+              if (!prev) return null;
+              const { updatedTasks, modifiedIds } = syncTasksFromAIResponse(
+                outputText,
+                prev.tasks
+              );
+              if (modifiedIds.length > 0) {
+                setHighlightedTaskIds(modifiedIds);
+                setTimeout(() => setHighlightedTaskIds([]), 5000);
+                showToast(`✨ Synced ${modifiedIds.length} tasks from AI`, "sparkle");
+              }
+              return { ...prev, tasks: updatedTasks };
+            });
           }
 
           const assistantMessage: Message = {
