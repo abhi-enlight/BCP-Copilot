@@ -39,7 +39,7 @@ const INITIAL_USERS: BigCityUser[] = [
     name: "Rohit Sharma",
     email: "rohit.sharma@bigcity.in",
     role: "Admin",
-    department: "Commercial Operations",
+    department: "",
     status: "active_now",
     lastActive: "Active now",
     initials: "RS",
@@ -602,7 +602,6 @@ export default function UsersAndRolesView({ onUserCountChange }: UsersAndRolesVi
                     <option value="FMCG Brand Campaigns">FMCG Brand Campaigns</option>
                     <option value="Platforms & OTP Gateways">Platforms & OTP Gateways</option>
                     <option value="Legal & Regulatory Affairs">Legal & Regulatory Affairs</option>
-                    <option value="Commercial Operations">Commercial Operations</option>
                     <option value="Vendor & Reward Operations">Vendor & Reward Operations</option>
                   </select>
                 </div>
