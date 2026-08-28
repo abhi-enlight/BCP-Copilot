@@ -421,14 +421,22 @@ export default function CopilotView({
       if (modSignals.test(lower)) return "plan_modify";
     }
 
-    const hasCreationVerb = /\b(create|generate|build|plan|launch|design|draft|set up|prepare)\b/i.test(lower);
-    const hasCampaignNoun = /\b(campaign|plan|brief|promotion)\b/i.test(lower);
     const hasSpecificBrand = /\b(nestl|cadbury|pepsi|tata|coca.?cola|britannia|itc|mondelez|pepsico|hindustan)\b/i.test(lower);
-    const hasExclusionSignal = /\b(example|explain|what is|show me|tell me|how does|list|describe|difference|compare|define|meaning|guide|help|about)\b/i.test(lower);
+    const hasCampaignNoun = /\b(campaign|plan|brief|promotion|deal)\b/i.test(lower);
+    const hasCreationVerb = /\b(create|generate|build|plan|launch|design|draft|set up|prepare|show|review|open|load|view)\b/i.test(lower);
+    
+    // Check if the user is asking for general educational explanation / definition (without asking about a specific campaign/brand)
+    const hasExclusionSignal = /\b(example\s+of|explain\s+how|what\s+is|what\s+does|meaning\s+of|how\s+does|compare\s+|difference\s+between)\b/i.test(lower);
 
-    if (hasExclusionSignal) return "conversational";
+    if (hasExclusionSignal && !hasSpecificBrand) {
+      return "conversational";
+    }
 
-    if (hasCreationVerb && (hasCampaignNoun || hasSpecificBrand)) {
+    if ((hasCreationVerb || hasCampaignNoun) && (hasSpecificBrand || /plan\s+and\s+risks/i.test(lower) || /for\s+[a-z]+/i.test(lower))) {
+      return "plan_create";
+    }
+
+    if (hasCreationVerb && hasCampaignNoun) {
       return "plan_create";
     }
 
@@ -463,6 +471,7 @@ export default function CopilotView({
 
       let planModified = false;
       let modificationSummary = "";
+      let activePlan = workingPlan;
 
       if (intent === "plan_modify" && workingPlan) {
         const modResult = applyPlanModifications(
@@ -475,21 +484,18 @@ export default function CopilotView({
           planModified = true;
           modificationSummary = modResult.summaryMarkdown;
 
-          setWorkingPlan((prev) => {
-            if (!prev) return null;
-            return {
-              ...prev,
-              tasks: modResult.updatedTasks,
-              campaignData: modResult.updatedCampaignData,
-            };
-          });
+          const updatedPlan: WorkingPlanState = {
+            ...workingPlan,
+            tasks: modResult.updatedTasks,
+            campaignData: modResult.updatedCampaignData,
+          };
+          activePlan = updatedPlan;
+          setWorkingPlan(updatedPlan);
 
           setIsPlanPanelOpen(true);
           setHighlightedTaskIds(modResult.modifiedTaskIds);
           setTimeout(() => setHighlightedTaskIds([]), 6000);
           showToast(`✨ Updated ${modResult.modifiedTaskIds.length} tasks — panel opened`, "sparkle");
-
-          // Auto-scroll logic could be added here if needed, but for now we open the panel.
         }
       } else if (!workingPlan && intent === "plan_create") {
         const isNestle = /nestl/i.test(content);
@@ -546,27 +552,28 @@ export default function CopilotView({
         };
 
         const plan = generateAspectPlan(campaignData);
-        setWorkingPlan({
+        const newWorkingPlan: WorkingPlanState = {
           campaignData,
           tasks: plan.tasks,
           aspectSummary: plan.aspectSummary,
           status: "draft",
-        });
+        };
+        activePlan = newWorkingPlan;
+        setWorkingPlan(newWorkingPlan);
         setIsPlanPanelOpen(true);
         showToast(`Loaded 4-Aspect Plan with ${plan.tasks.length} tasks`, "sparkle");
       }
 
       let promptToSend = content;
       
-      const isFirstMessage = session.messages.length === 0;
-      if (workingPlan && workingPlan.status !== "live" && (isFirstMessage || intent === "plan_modify" || intent === "plan_create")) {
+      if (activePlan && activePlan.status !== "live") {
         promptToSend = `[Active Working Campaign Context]
-Campaign: ${workingPlan.campaignData.name}
-Client: ${workingPlan.campaignData.client}
-Budget: ${workingPlan.campaignData.budget}
-Volume: ${workingPlan.campaignData.codeVolume}
-Current Tasks (${workingPlan.tasks.length}):
-${workingPlan.tasks.map((t, idx) => `${idx + 1}. [${t.aspect.toUpperCase()}] ${t.title} (Owner: ${t.assignee}, TAT: ${t.tat}, Urgency: ${t.urgency})`).join("\n")}
+Campaign: ${activePlan.campaignData.name}
+Client: ${activePlan.campaignData.client}
+Budget: ${activePlan.campaignData.budget}
+Volume: ${activePlan.campaignData.codeVolume}
+Current Tasks (${activePlan.tasks.length}):
+${activePlan.tasks.map((t, idx) => `${idx + 1}. [${t.aspect.toUpperCase()}] ${t.title} (Owner: ${t.assignee}, TAT: ${t.tat}, Urgency: ${t.urgency})`).join("\n")}
 
 User Request: ${content}`;
       }
