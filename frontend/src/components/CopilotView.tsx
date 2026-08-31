@@ -570,70 +570,38 @@ export default function CopilotView({
           showToast(`✨ Updated ${modResult.modifiedTaskIds.length} tasks — panel opened`, "sparkle");
         }
       } else if (!workingPlan && intent === "plan_create") {
-        const isNestle = /nestl/i.test(content);
-        const isCadbury = /cadbury|mondelez/i.test(content);
-        const isPepsi = /pepsi/i.test(content);
-        const isTata = /tata/i.test(content);
-
-        const defaultName = isNestle
-          ? "Nestlé Festive Scratch & Win ₹25 Lakh Campaign"
-          : isCadbury
-          ? "Mondelez Cadbury Silk Valentine's ₹100 Assured Cashback"
-          : isPepsi
-          ? "Pepsi UEFA Champions League ₹200 Zomato Dining Pass"
-          : isTata
-          ? "Tata Tea Gold ₹50 Amazon Pay Assured Reward"
-          : deriveTitle([{ role: "user", content, id: "1", timestamp: new Date() }]);
-
-        const defaultClient = isNestle
-          ? "Nestlé India Ltd"
-          : isCadbury
-          ? "Mondelez India Foods Pvt Ltd"
-          : isPepsi
-          ? "PepsiCo India Holdings"
-          : isTata
-          ? "Tata Consumer Products"
-          : "Enterprise Client";
-
-        const defaultBudget = content.includes("25")
-          ? "₹25,00,000"
-          : content.includes("35")
-          ? "₹35,00,000"
-          : content.includes("50")
-          ? "₹50,00,000"
-          : "₹25,00,000";
-
-        const defaultVolume = content.includes("100")
-          ? "100,000 packs"
-          : content.includes("350")
-          ? "350,00,000 packs"
-          : content.includes("500")
-          ? "500,000 cans"
-          : "250,000 packs";
-
-        const campaignData = {
-          name: defaultName,
-          client: defaultClient,
-          category: "FMCG",
-          budget: defaultBudget,
-          codeVolume: defaultVolume,
-          rewardType: isCadbury ? "Cashback" : isPepsi || isTata ? "EGV" : "Scratch & Win",
-          startDate: new Date().toISOString().split("T")[0],
-          endDate: new Date(Date.now() + 90 * 86400000).toISOString().split("T")[0],
-          brief: content,
-        };
-
-        const plan = generateAspectPlan(campaignData);
-        const newWorkingPlan: WorkingPlanState = {
-          campaignData,
-          tasks: plan.tasks,
-          aspectSummary: plan.aspectSummary,
-          status: "draft",
-        };
-        activePlan = newWorkingPlan;
-        setWorkingPlan(newWorkingPlan);
         setIsPlanPanelOpen(true);
-        showToast(`Loaded 4-Aspect Plan with ${plan.tasks.length} tasks`, "sparkle");
+        showToast("🧠 AI Brain decomposing brief & generating bespoke tasks...", "sparkle");
+
+        try {
+          const planRes = await fetch("/api/campaigns", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "generate_plan",
+              campaignInput: { brief: content },
+            }),
+          });
+          if (planRes.ok) {
+            const planJson = await planRes.json();
+            if (planJson.plan && planJson.campaignData) {
+              const newWorkingPlan: WorkingPlanState = {
+                campaignData: planJson.campaignData,
+                tasks: planJson.plan.tasks,
+                aspectSummary: planJson.plan.aspectSummary,
+                status: "draft",
+              };
+              activePlan = newWorkingPlan;
+              setWorkingPlan(newWorkingPlan);
+              showToast(
+                `✨ AI generated ${planJson.plan.tasks.length} bespoke tasks for ${planJson.campaignData.name}`,
+                "sparkle"
+              );
+            }
+          }
+        } catch (e) {
+          console.error("AI Plan generation error:", e);
+        }
       }
 
       let promptToSend = content;

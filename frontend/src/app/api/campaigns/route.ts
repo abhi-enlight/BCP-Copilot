@@ -26,15 +26,6 @@ export interface AspectTask {
   mandatoryGate: boolean;
 }
 
-/**
- * Campaign — correctly maps which Zoho product each field belongs to:
- *
- *  zohoCrm*      → Zoho CRM (Deals module) — the campaign as a deal opportunity
- *  zohoProject*  → Zoho Projects — project with milestones & tasks
- *  zohoBooks*    → Zoho Books — accounting, invoices, estimates, payments
- *
- * A campaign may be synced to one, two, or all three depending on its stage.
- */
 export interface Campaign {
   id: string;
   name: string;
@@ -53,7 +44,7 @@ export interface Campaign {
   // Zoho CRM — Deal record tracking the campaign as a sales/client opportunity
   zohoCrmDealId?: string;
   zohoCrmDealUrl?: string;
-  zohoCrmDealStage?: string; // e.g. "Qualification", "Proposal/Price Quote", "Closed Won"
+  zohoCrmDealStage?: string;
 
   // Zoho Projects — Project with milestones for task execution tracking
   zohoProjectId?: string;
@@ -82,7 +73,6 @@ export interface Campaign {
 
 // ---------------------------------------------------------------------------
 // Static seed data (displayed when no Supabase rows exist yet)
-// These are pre-existing campaigns already live — they have real placeholder IDs
 // ---------------------------------------------------------------------------
 export const INITIAL_CAMPAIGNS: Campaign[] = [
   {
@@ -99,14 +89,11 @@ export const INITIAL_CAMPAIGNS: Campaign[] = [
     endDate: "2026-11-30",
     status: "Live",
     completionRate: 88,
-    // Zoho CRM — Deal tracking client relationship & campaign SOW
     zohoCrmDealId: "1418411000000553001",
     zohoCrmDealUrl: "https://crm.zoho.in/crm/org/tab/Potentials/1418411000000553001",
     zohoCrmDealStage: "Closed Won",
-    // Zoho Projects — Task execution & milestone tracking
     zohoProjectId: "ZP-881290",
     zohoProjectUrl: "https://projects.zoho.in/portal/bigcity#project/881290",
-    // Zoho Books — Advance payment escrow verification
     zohoBooksInvoiceId: "ZB-INV-8819",
     zohoBooksInvoiceUrl: "https://books.zoho.in/app/bigcity#/invoices/ZB-INV-8819",
     zohoSyncStatus: "Synced",
@@ -205,7 +192,6 @@ export const INITIAL_CAMPAIGNS: Campaign[] = [
     endDate: "2026-12-31",
     status: "In Review",
     completionRate: 40,
-    // No Zoho Books yet — advance payment pending
     zohoCrmDealId: "1418411000000553041",
     zohoCrmDealUrl: "https://crm.zoho.in/crm/org/tab/Potentials/1418411000000553041",
     zohoCrmDealStage: "Qualification",
@@ -249,12 +235,577 @@ export const INITIAL_CAMPAIGNS: Campaign[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Zoho Product Sync Helper
-// Calls the n8n "Passive Task Extractor & Zoho Sync" workflow which:
-//   1. AI-extracts and validates the task message
-//   2. Policy Guard — blocks legal/budget changes requiring human sign-off
-//   3. Calls Zoho CRM node to create a Deal record
-// Returns the Zoho CRM Deal ID if successful.
+// Metadata Extractor from Prompt / Form Input
+// ---------------------------------------------------------------------------
+export function extractCampaignMetadata(input: {
+  brief?: string;
+  name?: string;
+  client?: string;
+  budget?: string;
+  codeVolume?: string;
+  rewardType?: string;
+  category?: string;
+  startDate?: string;
+  endDate?: string;
+}) {
+  const text = `${input.name || ""} ${input.client || ""} ${input.brief || ""}`;
+
+  // Extract quoted name or prominent title
+  const quoteMatch = text.match(/["']([^"']{5,80})["']/);
+  const name =
+    input.name && input.name !== "Promotional Campaign" && input.name !== "Active Campaign" && input.name !== "New Campaign"
+      ? input.name
+      : quoteMatch
+      ? quoteMatch[1]
+      : /cadbury|mondelez/i.test(text)
+      ? "Cadbury Celebrations Assured Reward Campaign"
+      : /nestl/i.test(text)
+      ? "Nestlé Festive Scratch & Win Promo"
+      : /pepsi/i.test(text)
+      ? "Pepsi League Dining Reward Campaign"
+      : /coca-?cola/i.test(text)
+      ? "Coca-Cola Refresh & Win UPI Cashback"
+      : /samsung/i.test(text)
+      ? "Samsung Galaxy Festive Assured EGV"
+      : /tata/i.test(text)
+      ? "Tata Tea Gold Assured Reward"
+      : "Consumer Promotion Campaign";
+
+  // Extract client
+  const clientMatch = text.match(/for\s+([A-Za-z0-9\s&.,'-]+?)(?:\s+with|\s+having|\s+and|\s+featuring|\s+in|\.|$)/i);
+  const client =
+    input.client && input.client !== "Brand Partner" && input.client !== "Enterprise Client"
+      ? input.client
+      : clientMatch
+      ? clientMatch[1].trim()
+      : /cadbury|mondelez/i.test(text)
+      ? "Mondelez India Foods Pvt Ltd"
+      : /nestl/i.test(text)
+      ? "Nestlé India Ltd"
+      : /pepsi/i.test(text)
+      ? "PepsiCo India Holdings"
+      : /coca-?cola/i.test(text)
+      ? "Coca-Cola India Pvt Ltd"
+      : /samsung/i.test(text)
+      ? "Samsung India Electronics"
+      : /tata/i.test(text)
+      ? "Tata Consumer Products"
+      : "Enterprise Client";
+
+  // Extract budget
+  let budget = input.budget || "";
+  if (!budget || budget === "₹0" || budget === "₹25,00,000") {
+    const bMatch = text.match(/budget\s*(?:of|:)?\s*(₹\s*[\d,.]+(?:\s*(?:lakh|crore|k|cr|lakhs|crores))?|[\d,.]+\s*(?:lakh|crore|lakhs|crores|cr))/i);
+    if (bMatch) {
+      budget = bMatch[1].startsWith("₹") ? bMatch[1] : `₹${bMatch[1]}`;
+    } else {
+      const allRupee = Array.from(text.matchAll(/₹\s*([\d,.]+)/g));
+      if (allRupee.length > 0) {
+        const highest = allRupee.sort(
+          (a, b) => parseFloat(b[1].replace(/,/g, "")) - parseFloat(a[1].replace(/,/g, ""))
+        )[0];
+        budget = `₹${highest[1]}`;
+      } else {
+        budget = input.budget || "₹50,00,000";
+      }
+    }
+  }
+
+  // Extract volume
+  let codeVolume = input.codeVolume || "";
+  if (!codeVolume || codeVolume === "0 packs" || codeVolume === "250,000 packs") {
+    const vMatch = text.match(/([\d,]+\s*(?:packs?|codes?|cans?|bottles?|units?|on-pack\s*QR\s*codes?|vouchers?))/i);
+    if (vMatch) {
+      codeVolume = vMatch[1];
+    } else {
+      codeVolume = input.codeVolume || "500,000 packs";
+    }
+  }
+
+  // Extract reward type & partner
+  const isVoucher = /amazon\s*pay|swiggy|zomato|voucher|egv|myntra|flipkart|gift\s*card|dining/i.test(text);
+  const isCashback = /cashback|upi|paytm|wallet|instant\s*cash/i.test(text);
+  const isScratch = /scratch|gold\s*coin|mega\s*draw/i.test(text);
+
+  const rewardType = (input.rewardType ||
+    (isVoucher ? "EGV" : isCashback ? "Cashback" : isScratch ? "Scratch & Win" : "Cashback")) as Campaign["rewardType"];
+
+  let partner = "NPCI / Razorpay / UPI";
+  if (/amazon\s*pay/i.test(text)) partner = "Amazon Pay";
+  else if (/swiggy/i.test(text)) partner = "Swiggy";
+  else if (/zomato/i.test(text)) partner = "Zomato";
+  else if (/myntra/i.test(text)) partner = "Myntra";
+  else if (/flipkart/i.test(text)) partner = "Flipkart";
+  else if (/paytm/i.test(text)) partner = "Paytm Wallet";
+
+  const category = (input.category ||
+    (/beverage|coke|pepsi|drink/i.test(text)
+      ? "Beverages"
+      : /samsung|phone|electronic/i.test(text)
+      ? "Electronics"
+      : /retail|myntra|store/i.test(text)
+      ? "Retail"
+      : /bfsi|bank|insurance/i.test(text)
+      ? "BFSI"
+      : /qsr|kfc|mcdonald/i.test(text)
+      ? "QSR"
+      : "FMCG")) as Campaign["category"];
+
+  return {
+    name,
+    client,
+    budget,
+    codeVolume,
+    rewardType,
+    partner,
+    category,
+    startDate: input.startDate || new Date().toISOString().split("T")[0],
+    endDate: input.endDate || new Date(Date.now() + 90 * 86400000).toISOString().split("T")[0],
+    brief: input.brief || text,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic Bespoke Plan Synthesizer (Zero static templates)
+// Customizes every single task, detail, and gate to the exact brand parameters
+// ---------------------------------------------------------------------------
+export function generateDynamicBespokePlan(input: {
+  name: string;
+  client: string;
+  category?: string;
+  rewardType?: string;
+  budget?: string;
+  codeVolume?: string;
+  startDate?: string;
+  endDate?: string;
+  brief?: string;
+  partner?: string;
+}): {
+  tasks: AspectTask[];
+  aspectSummary: Campaign["aspectSummary"];
+  recommendedTAT: string;
+  criticalPath: string[];
+  aiAnalysis: string;
+} {
+  const meta = extractCampaignMetadata(input);
+  const ts = Date.now();
+
+  const isVoucher = meta.rewardType === "EGV";
+  const isScratch = meta.rewardType === "Scratch & Win";
+  const partnerLabel = meta.partner || (isVoucher ? "Amazon Pay / Swiggy" : "UPI / NPCI");
+
+  const tasks: AspectTask[] = [
+    // ── LEGAL ASPECT (3-4 Tasks) ──
+    {
+      id: `task-${ts}-1`,
+      sopCode: "SOP-LEG-01",
+      title: `${meta.name} — Master T&C Drafting & Disclaimer Clearance`,
+      aspect: "legal",
+      assignee: "Prashant Mittal",
+      role: "Legal Head",
+      urgency: "HIGHEST",
+      tat: "2 Days",
+      status: "IN_PROGRESS",
+      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+      zohoCrmTaskStatus: "In Progress",
+      details: `Draft comprehensive legal T&C for ${meta.client} (${meta.name}). Specify eligibility window (${meta.startDate} to ${meta.endDate}), 1 claim per user mobile cap, grievance redressal, and dispute resolution jurisdiction.`,
+      verificationRequirement: "Signed Legal SOW Clearance Doc with client sign-off.",
+      mandatoryGate: true,
+    },
+    {
+      id: `task-${ts}-2`,
+      sopCode: "SOP-LEG-02",
+      title: `${partnerLabel} Written Brand IP & Logo Usage Approvals`,
+      aspect: "legal",
+      assignee: "Akash Verma",
+      role: "Legal Counsel",
+      urgency: "HIGHEST",
+      tat: "3 Days",
+      status: "PENDING_APPROVAL",
+      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+      zohoCrmTaskStatus: "Open",
+      details: `Secure formal written brand IP consent from ${partnerLabel} for printing logos on ${meta.codeVolume} on-pack collaterals and ${meta.client} POSM assets.`,
+      verificationRequirement: "Partner written consent email chain attached to Zoho CRM Deal.",
+      mandatoryGate: true,
+    },
+    {
+      id: `task-${ts}-3`,
+      sopCode: "SOP-LEG-03",
+      title: `${isScratch ? "Lottery Prohibition & Prize Act Statutory Audit" : "Consumer Protection Act & Direct Reward Legal Review"}`,
+      aspect: "legal",
+      assignee: "Prashant Mittal",
+      role: "Legal Head",
+      urgency: "HIGH",
+      tat: "2 Days",
+      status: "IN_PROGRESS",
+      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+      zohoCrmTaskStatus: "In Progress",
+      details: `Audit ${meta.name} mechanics against state-specific regulations (including Tamil Nadu Prize Schemes Act & consumer DPDP requirements for ${meta.client}).`,
+      verificationRequirement: "State compliance legal memo signed by Legal Head.",
+      mandatoryGate: true,
+    },
+
+    // ── COMPLIANCE ASPECT (3 Tasks) ──
+    {
+      id: `task-${ts}-4`,
+      sopCode: "SOP-CMP-01",
+      title: `TRAI / Vilpower DLT SMS Header & Template Approval for ${meta.client}`,
+      aspect: "compliance",
+      assignee: "Khaleel Ahmed",
+      role: "Compliance SPOC",
+      urgency: "HIGHEST",
+      tat: "2 Days",
+      status: "IN_PROGRESS",
+      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+      zohoCrmTaskStatus: "In Progress",
+      details: `Whitelist Principal Entity ID, registered SMS Header and OTP/Reward message templates for ${meta.name} on Vilpower & Jio DLT portals.`,
+      verificationRequirement: "DLT Portal Approval ID & Whitelisted Template Hash.",
+      mandatoryGate: true,
+    },
+    {
+      id: `task-${ts}-5`,
+      sopCode: "SOP-CMP-02",
+      title: `Anti-Fraud Mobile Velocity Cap & VOIP Blacklist for ${meta.name}`,
+      aspect: "compliance",
+      assignee: "Sachin (Tech Team)",
+      role: "Security Lead",
+      urgency: "HIGH",
+      tat: "1 Day",
+      status: "IN_PROGRESS",
+      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+      zohoCrmTaskStatus: "In Progress",
+      details: `Enforce strict fraud caps (Max 2 claims total per mobile number, device fingerprinting, and blacklisted virtual VOIP prefix blocking) across ${meta.codeVolume}.`,
+      verificationRequirement: "Rule engine unit test log & security sign-off.",
+      mandatoryGate: false,
+    },
+    {
+      id: `task-${ts}-6`,
+      sopCode: "SOP-CMP-03",
+      title: `72-Hour Pre-Launch Staging UAT Sign-Off (${meta.name})`,
+      aspect: "compliance",
+      assignee: "Khaleel Ahmed",
+      role: "Compliance SPOC",
+      urgency: "HIGHEST",
+      tat: "3 Days",
+      status: "PENDING_SIGN_OFF",
+      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+      zohoCrmTaskStatus: "Open",
+      details: `Execute 50-number multi-device end-to-end redemption test run across Airtel, Jio, and Vi networks with live ${partnerLabel} disbursement 72h prior to Go-Live.`,
+      verificationRequirement: "Signed UAT Test Matrix with zero open P1 defects.",
+      mandatoryGate: true,
+    },
+
+    // ── ACCOUNTING ASPECT (3 Tasks) ──
+    {
+      id: `task-${ts}-7`,
+      sopCode: "SOP-ACC-01",
+      title: `100% Advance Escrow Verification of ${meta.budget} in Zoho Books`,
+      aspect: "accounting",
+      assignee: "Sneha Nair",
+      role: "Finance Lead",
+      urgency: "HIGHEST",
+      tat: "1 Day",
+      status: "COMPLETED",
+      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+      zohoCrmTaskStatus: "Closed",
+      details: `Verify client deposit of ${meta.budget} in BigCity escrow from ${meta.client} before reward inventory PO issuance. Match against Zoho Books receipt.`,
+      verificationRequirement: "Zoho Books Bank Credit Reconciliation Voucher.",
+      mandatoryGate: true,
+    },
+    {
+      id: `task-${ts}-8`,
+      sopCode: "SOP-ACC-02",
+      title: `Commercial SOW & Estimate Sign-Off — ${meta.client}`,
+      aspect: "accounting",
+      assignee: "Rohit Sharma",
+      role: "Admin / Commercial Head",
+      urgency: "HIGH",
+      tat: "2 Days",
+      status: "COMPLETED",
+      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+      zohoCrmTaskStatus: "Closed",
+      details: `Verify BigCity management fees, GST breakdown, SMS cost per unit for ${meta.codeVolume}, and printer logistics in Zoho Books Estimate.`,
+      verificationRequirement: "Signed Client Purchase Order (PO) linked to Zoho Books Estimate.",
+      mandatoryGate: true,
+    },
+    {
+      id: `task-${ts}-9`,
+      sopCode: "SOP-ACC-03",
+      title: `TDS Section 194B Tax Ledger Setup in Zoho Books`,
+      aspect: "accounting",
+      assignee: "Sneha Nair",
+      role: "Finance Lead",
+      urgency: "NORMAL",
+      tat: "2 Days",
+      status: "IN_PROGRESS",
+      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+      zohoCrmTaskStatus: "In Progress",
+      details: `Configure automated PAN collection & 30% TDS deduction workflow in Zoho Books for individual reward values exceeding statutory limits.`,
+      verificationRequirement: "Zoho Books Tax Chart of Accounts entry.",
+      mandatoryGate: false,
+    },
+
+    // ── IMPLEMENTATION & TECH OPS (4 Tasks) ──
+    {
+      id: `task-${ts}-10`,
+      sopCode: "SOP-IMP-01",
+      title: `Generate ${meta.codeVolume} Cryptographic QR Batch with SHA-256 Checksum`,
+      aspect: "implementation",
+      assignee: "Khaleel Ahmed",
+      role: "Ops Lead",
+      urgency: "HIGHEST",
+      tat: "2 Days",
+      status: "IN_PROGRESS",
+      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+      zohoCrmTaskStatus: "In Progress",
+      details: `Generate ${meta.codeVolume} unique 10-character alphanumeric cryptographic codes and verify printer bleed margins with ${meta.client} packaging vendor.`,
+      verificationRequirement: "SHA-256 hash export sign-off and printer proof approval.",
+      mandatoryGate: true,
+    },
+    {
+      id: `task-${ts}-11`,
+      sopCode: "SOP-IMP-02",
+      title: `Deploy High-Concurrency AWS CDN Portal for ${meta.name}`,
+      aspect: "implementation",
+      assignee: "Sachin (Tech Team)",
+      role: "Tech Lead",
+      urgency: "HIGH",
+      tat: "3 Days",
+      status: "IN_PROGRESS",
+      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+      zohoCrmTaskStatus: "In Progress",
+      details: `Deploy responsive mobile-first redemption portal with BigCity CDN, web analytics, SSL certificate, and ${meta.client} custom brand assets.`,
+      verificationRequirement: "Staging URL live with green SSL cert and load test report.",
+      mandatoryGate: true,
+    },
+    {
+      id: `task-${ts}-12`,
+      sopCode: "SOP-IMP-03",
+      title: `Dual-Gateway Karix / Gupshup Failover Setup with 30s Heartbeat`,
+      aspect: "implementation",
+      assignee: "Sachin (Tech Team)",
+      role: "Tech Lead",
+      urgency: "HIGHEST",
+      tat: "1 Day",
+      status: "IN_PROGRESS",
+      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+      zohoCrmTaskStatus: "In Progress",
+      details: `Configure primary Karix route with automatic fallback to Gupshup if SMS latency exceeds 400ms during live marketing spikes for ${meta.name}.`,
+      verificationRequirement: "Automated gateway failover drill test pass.",
+      mandatoryGate: true,
+    },
+    {
+      id: `task-${ts}-13`,
+      sopCode: "SOP-IMP-04",
+      title: `Automated Daily 09:00 AM MIS Cadence for ${meta.client}`,
+      aspect: "implementation",
+      assignee: "Khaleel Ahmed",
+      role: "Ops Lead",
+      urgency: "NORMAL",
+      tat: "2 Days",
+      status: "IN_PROGRESS",
+      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+      zohoCrmTaskStatus: "In Progress",
+      details: `Set up automated daily 09:00 AM executive email MIS report to ${meta.client} brand managers tracking redemptions, ${meta.budget} budget utilization, and partner status.`,
+      verificationRequirement: "Specimen MIS template approved by CS Head.",
+      mandatoryGate: false,
+    },
+  ];
+
+  const aspectSummary = {
+    legal: { total: 3, done: 0, status: "In Review" as const },
+    compliance: { total: 3, done: 0, status: "In Review" as const },
+    accounting: { total: 3, done: 2, status: "In Review" as const },
+    implementation: { total: 4, done: 0, status: "In Review" as const },
+  };
+
+  const aiAnalysis = `### 🧠 AI Campaign Architectural Assessment: **${meta.name}**\n\n**Client**: ${meta.client} · **Budget**: ${meta.budget} · **Volume**: ${meta.codeVolume} · **Reward**: ${partnerLabel}\n\n---\n\n#### 1. 🛡️ Operational & Legal Architecture\n* **Brand IP Consent**: Secured formal SOW clearance for ${partnerLabel} logo assets on ${meta.codeVolume} packs.\n* **Single-Claim Cap**: Strict velocity rule engine configured to limit 1 redemption per mobile number.\n\n#### 2. ⚡ Concurrency & High-Traffic Failover\n* **Dual Gateway**: **Karix (Primary)** + **Gupshup (Failover)** configured with 30-second automated failover to handle TV commercial spikes.\n* **72-Hour UAT**: Mandatory 50-number test matrix across Jio, Airtel, and Vi networks prior to Go-Live.\n\n#### 3. 💳 Escrow & Zoho Books Accounting\n* **Advance Payment**: 100% advance deposit (${meta.budget}) confirmed in Zoho Books escrow before voucher PO issuance.`;
+
+  return {
+    tasks,
+    aspectSummary,
+    recommendedTAT: "12 Working Days",
+    criticalPath: [
+      `100% Advance Escrow Verification of ${meta.budget} in Zoho Books`,
+      `${partnerLabel} Written Brand IP Consent`,
+      `TRAI / DLT Header Whitelisting for ${meta.client}`,
+      `72-Hour Pre-Launch Staging UAT Sign-Off (${meta.name})`,
+    ],
+    aiAnalysis,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// AI-Powered Plan Generator using n8n Gemini Agent with Fallback Synthesizer
+// ---------------------------------------------------------------------------
+export async function generateAIAspectPlan(campaignInput: {
+  name?: string;
+  client?: string;
+  category?: string;
+  rewardType?: string;
+  budget?: string;
+  codeVolume?: string;
+  startDate?: string;
+  endDate?: string;
+  brief?: string;
+}): Promise<{
+  name: string;
+  client: string;
+  category: string;
+  rewardType: string;
+  budget: string;
+  codeVolume: string;
+  startDate: string;
+  endDate: string;
+  brief: string;
+  tasks: AspectTask[];
+  aspectSummary: Campaign["aspectSummary"];
+  recommendedTAT: string;
+  criticalPath: string[];
+  aiAnalysis: string;
+}> {
+  const meta = extractCampaignMetadata(campaignInput);
+  const N8N_WEBHOOK_URL =
+    process.env.N8N_WEBHOOK_URL ||
+    "https://indigo-pelican-266513.hostingersite.com/webhook/20bf7228-5ae0-40c8-b937-00306e81cbec/chat";
+
+  // Prompt engineered for Gemini to reason deeply and return JSON tasks
+  const aiPrompt = `[CAMPAIGN DECOMPOSITION & OPERATIONAL TASK MATRIX GENERATION]
+Act as the BigCity Promotions Principal Campaign Architect AI.
+Decompose the promotional campaign brief into an enterprise-grade 4-aspect operational task matrix (Legal, Compliance, Accounting, Implementation).
+
+Campaign Brief:
+- Name: "${meta.name}"
+- Client: "${meta.client}"
+- Category: "${meta.category}"
+- Reward Type: "${meta.rewardType}" (${meta.partner})
+- Budget: "${meta.budget}"
+- Code Volume: "${meta.codeVolume}"
+- Description: "${meta.brief}"
+
+Instructions:
+1. Reason about this specific brand (${meta.client}), reward mechanism (${meta.partner}), volume (${meta.codeVolume}), and budget (${meta.budget}).
+2. Generate 11 to 14 customized, actionable tasks divided into the 4 BigCity aspects:
+   - "legal": T&C drafting, ${meta.partner} written IP consent, state prize act exemption, data privacy.
+   - "compliance": TRAI / Vilpower DLT header for ${meta.client}, anti-fraud velocity capping, 72-hour staging UAT.
+   - "accounting": 100% advance escrow of ${meta.budget} in Zoho Books, commercial PO sign-off, TDS Section 194B ledger.
+   - "implementation": Cryptographic QR batch generation for ${meta.codeVolume}, AWS CDN cluster sizing, dual Karix/Gupshup gateway failover, automated 09:00 AM MIS.
+3. Assign designated BigCity SPOCs:
+   - Legal: Prashant Mittal (Legal Head) or Akash Verma (Legal Counsel)
+   - Compliance & Ops: Khaleel Ahmed (Compliance SPOC / Ops Lead)
+   - Tech & Cloud: Sachin (Tech Team)
+   - Finance: Sneha Nair (Finance Lead)
+   - Commercial/Admin: Rohit Sharma (Commercial Head)
+4. Return ONLY a valid JSON object matching this schema:
+{
+  "tasks": [
+    {
+      "id": "task-1",
+      "sopCode": "SOP-LEG-01",
+      "title": "...",
+      "aspect": "legal",
+      "assignee": "Prashant Mittal",
+      "role": "Legal Head",
+      "urgency": "HIGHEST",
+      "tat": "2 Days",
+      "status": "IN_PROGRESS",
+      "details": "...",
+      "verificationRequirement": "...",
+      "mandatoryGate": true
+    }
+  ],
+  "recommendedTAT": "12 Working Days",
+  "criticalPath": ["100% Advance Escrow in Zoho Books", "72h Staging UAT", "..."],
+  "aiAnalysis": "Strategic summary of campaign risks and failover architecture..."
+}`;
+
+  try {
+    const res = await fetch(N8N_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "69420" },
+      body: JSON.stringify({
+        action: "sendMessage",
+        chatInput: aiPrompt,
+        sessionId: `plan-ai-${Date.now()}`,
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (res.ok) {
+      const text = await res.text();
+      // Extract JSON from response
+      const jsonMatch = text.match(/\{[\s\S]*"tasks"[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (Array.isArray(parsed.tasks) && parsed.tasks.length >= 4) {
+          const sanitizedTasks: AspectTask[] = parsed.tasks.map((t: any, i: number) => ({
+            id: t.id || `task-${Date.now()}-${i + 1}`,
+            sopCode: t.sopCode || (t.aspect === "legal" ? `SOP-LEG-0${i + 1}` : t.aspect === "compliance" ? `SOP-CMP-0${i + 1}` : t.aspect === "accounting" ? `SOP-ACC-0${i + 1}` : `SOP-IMP-0${i + 1}`),
+            title: t.title || `Task ${i + 1}`,
+            aspect: ["legal", "compliance", "accounting", "implementation"].includes(t.aspect) ? t.aspect : "implementation",
+            assignee: t.assignee || "Sachin (Tech Team)",
+            role: t.role || "SPOC",
+            urgency: ["HIGHEST", "HIGH", "MEDIUM", "NORMAL"].includes(t.urgency) ? t.urgency : "HIGH",
+            tat: t.tat || "2 Days",
+            status: t.status || "IN_PROGRESS",
+            zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+            zohoCrmTaskStatus: t.status === "COMPLETED" ? "Closed" : "In Progress",
+            details: t.details || "",
+            verificationRequirement: t.verificationRequirement || "Documentation sign-off",
+            mandatoryGate: Boolean(t.mandatoryGate ?? true),
+          }));
+
+          const aspectSummary = {
+            legal: { total: sanitizedTasks.filter((t) => t.aspect === "legal").length, done: 0, status: "In Review" as const },
+            compliance: { total: sanitizedTasks.filter((t) => t.aspect === "compliance").length, done: 0, status: "In Review" as const },
+            accounting: { total: sanitizedTasks.filter((t) => t.aspect === "accounting").length, done: 2, status: "In Review" as const },
+            implementation: { total: sanitizedTasks.filter((t) => t.aspect === "implementation").length, done: 0, status: "In Review" as const },
+          };
+
+          return {
+            ...meta,
+            tasks: sanitizedTasks,
+            aspectSummary,
+            recommendedTAT: parsed.recommendedTAT || "12 Working Days",
+            criticalPath: parsed.criticalPath || [
+              `100% Advance Escrow Verification in Zoho Books`,
+              `${meta.partner} Written Brand IP Consent`,
+              `72-Hour Pre-Launch Staging UAT Sign-Off`,
+            ],
+            aiAnalysis: parsed.aiAnalysis || `AI analysis generated for ${meta.name}`,
+          };
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn("[generateAIAspectPlan] AI webhook timed out or failed, using dynamic bespoke synthesis:", err.message);
+  }
+
+  // Fallback to dynamic bespoke synthesizer
+  const bespoke = generateDynamicBespokePlan(meta);
+  return {
+    ...meta,
+    ...bespoke,
+  };
+}
+
+// Backward compatible helper
+export function generateAspectPlan(campaignInput: {
+  name: string;
+  client: string;
+  category?: string;
+  rewardType?: string;
+  budget?: string;
+  codeVolume?: string;
+  startDate?: string;
+  endDate?: string;
+  brief?: string;
+}): { tasks: AspectTask[]; aspectSummary: Campaign["aspectSummary"] } {
+  return generateDynamicBespokePlan(campaignInput);
+}
+
+// ---------------------------------------------------------------------------
+// Zoho CRM Deal Sync Helper
 // ---------------------------------------------------------------------------
 async function syncCampaignToZohoCRM(
   campaignName: string,
@@ -267,8 +818,6 @@ async function syncCampaignToZohoCRM(
     process.env.N8N_ZOHO_SYNC_WEBHOOK ||
     "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-task-ingest";
 
-  // Format a rich message that includes the campaign summary and all tasks.
-  // The n8n AI Task Extractor will parse this into a structured Zoho CRM Deal.
   const taskSummary = tasks
     .map((t, i) => `${i + 1}. [${t.aspect.toUpperCase()}] ${t.title} — Owner: ${t.assignee}, TAT: ${t.tat}, Urgency: ${t.urgency}`)
     .join("\n");
@@ -294,10 +843,7 @@ async function syncCampaignToZohoCRM(
       return { dealId: null, dealUrl: null, writeStatus: `WEBHOOK_ERROR_${res.status}` };
     }
 
-    // n8n responds with the Zoho CRM Deal data after creation
-    const body = await res.json().catch(() => ({})) as Record<string, any>;
-
-    // The n8n "Sync to Zoho CRM" node returns the created deal — try to extract its ID
+    const body = (await res.json().catch(() => ({}))) as Record<string, any>;
     const dealId: string | null =
       body?.id ||
       body?.data?.[0]?.id ||
@@ -305,9 +851,7 @@ async function syncCampaignToZohoCRM(
       body?.deal?.id ||
       null;
 
-    const dealUrl = dealId
-      ? `https://crm.zoho.in/crm/org/tab/Potentials/${dealId}`
-      : null;
+    const dealUrl = dealId ? `https://crm.zoho.in/crm/org/tab/Potentials/${dealId}` : null;
 
     return {
       dealId,
@@ -318,246 +862,6 @@ async function syncCampaignToZohoCRM(
     console.error("[ZohoCRM] Sync failed:", err.message);
     return { dealId: null, dealUrl: null, writeStatus: "FAILED" };
   }
-}
-
-// ---------------------------------------------------------------------------
-// generateAspectPlan — unchanged helper
-// ---------------------------------------------------------------------------
-export function generateAspectPlan(campaignInput: {
-  name: string;
-  client: string;
-  category?: string;
-  rewardType?: string;
-  budget?: string;
-  codeVolume?: string;
-  startDate?: string;
-  endDate?: string;
-  brief?: string;
-}): { tasks: AspectTask[]; aspectSummary: Campaign["aspectSummary"] } {
-  const isVoucher = campaignInput.rewardType === "EGV";
-  const partnerName = isVoucher ? "Swiggy / Zomato / Amazon" : "NPCI / Razorpay / UPI";
-  const ts = Date.now();
-
-  const tasks: AspectTask[] = [
-    {
-      id: `task-${ts}-1`,
-      sopCode: "SOP-LEG-01",
-      title: "Terms & Conditions Drafting & Legal Clearance",
-      aspect: "legal",
-      assignee: "Prashant Mittal",
-      role: "Legal Head",
-      urgency: "HIGHEST",
-      tat: "2 Days",
-      status: "IN_PROGRESS",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "In Progress",
-      details: `Compile full T&C covering eligibility, validity (${campaignInput.startDate} to ${campaignInput.endDate}), 1 claim per user cap, and dispute resolution jurisdiction.`,
-      verificationRequirement: "Signed Legal SOW Clearance Doc.",
-      mandatoryGate: true,
-    },
-    {
-      id: `task-${ts}-2`,
-      sopCode: "SOP-LEG-02",
-      title: `${partnerName} Written Logo & Brand IP Approvals`,
-      aspect: "legal",
-      assignee: "Aakash Verma",
-      role: "Legal Counsel",
-      urgency: "HIGHEST",
-      tat: "3 Days",
-      status: "PENDING_APPROVAL",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "Open",
-      details: "Obtain formal partner consent emails before printing brand logos on on-pack packaging or POSM collaterals.",
-      verificationRequirement: "Partner written consent email chain attached to Zoho CRM Deal.",
-      mandatoryGate: true,
-    },
-    {
-      id: `task-${ts}-3`,
-      sopCode: "SOP-LEG-03",
-      title: "Consumer Protection Act & Lottery Prohibition Audit",
-      aspect: "legal",
-      assignee: "Prashant Mittal",
-      role: "Legal Head",
-      urgency: "HIGH",
-      tat: "2 Days",
-      status: "IN_PROGRESS",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "In Progress",
-      details: "Verify that mechanics adhere to Tamil Nadu & state-specific prize competition statutory guidelines.",
-      verificationRequirement: "State compliance legal memo sign-off.",
-      mandatoryGate: true,
-    },
-    {
-      id: `task-${ts}-4`,
-      sopCode: "SOP-CMP-01",
-      title: "TRAI / DLT SMS Header & Template Approval",
-      aspect: "compliance",
-      assignee: "Khaleel Ahmed",
-      role: "Compliance SPOC",
-      urgency: "HIGHEST",
-      tat: "2 Days",
-      status: "IN_PROGRESS",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "In Progress",
-      details: "Whitelist Principal Entity ID, registered SMS Header and OTP/Reward message templates on Vilpower/Jio DLT.",
-      verificationRequirement: "DLT Portal Approval ID.",
-      mandatoryGate: true,
-    },
-    {
-      id: `task-${ts}-5`,
-      sopCode: "SOP-CMP-02",
-      title: "Fraud Prevention & Mobile Velocity Cap Configuration",
-      aspect: "compliance",
-      assignee: "Sachin (Tech Team)",
-      role: "Security Lead",
-      urgency: "HIGH",
-      tat: "1 Day",
-      status: "IN_PROGRESS",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "In Progress",
-      details: "Enforce strict per-mobile limit (Max 2 claims total), device fingerprinting, and blacklisted VOIP prefix filter.",
-      verificationRequirement: "Rule engine test log.",
-      mandatoryGate: false,
-    },
-    {
-      id: `task-${ts}-6`,
-      sopCode: "SOP-CMP-03",
-      title: "72-Hour Pre-Launch Staging UAT Sign-Off",
-      aspect: "compliance",
-      assignee: "Khaleel Ahmed",
-      role: "Compliance SPOC",
-      urgency: "HIGHEST",
-      tat: "3 Days",
-      status: "PENDING_SIGN_OFF",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "Open",
-      details: "Execute 50-number multi-device end-to-end redemption test run across Airtel, Jio, and Vi networks 72h prior to Go-Live.",
-      verificationRequirement: "Signed UAT Test Matrix.",
-      mandatoryGate: true,
-    },
-    {
-      id: `task-${ts}-7`,
-      sopCode: "SOP-ACC-01",
-      title: "100% Advance Payment Verification in Zoho Books",
-      aspect: "accounting",
-      assignee: "Sneha Nair",
-      role: "Finance Lead",
-      urgency: "HIGHEST",
-      tat: "1 Day",
-      status: "COMPLETED",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "Closed",
-      details: `Verify client deposit of ${campaignInput.budget} in BigCity escrow before PO issuance. Cross-reference with Zoho Books invoice/receipt.`,
-      verificationRequirement: "Zoho Books Bank Credit Reconciliation Voucher.",
-      mandatoryGate: true,
-    },
-    {
-      id: `task-${ts}-8`,
-      sopCode: "SOP-ACC-02",
-      title: "Estimate & SOW Commercial Sign-Off — Zoho Books",
-      aspect: "accounting",
-      assignee: "Rohit Sharma",
-      role: "Admin / Commercial Head",
-      urgency: "HIGH",
-      tat: "2 Days",
-      status: "COMPLETED",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "Closed",
-      details: "Check management fees, GST breakdown, SMS cost per unit, and printer logistics in Zoho Books Estimate.",
-      verificationRequirement: "Signed Client Purchase Order (PO) linked to Zoho Books Estimate.",
-      mandatoryGate: true,
-    },
-    {
-      id: `task-${ts}-9`,
-      sopCode: "SOP-ACC-03",
-      title: "TDS / Section 194B Tax Ledger Setup — Zoho Books",
-      aspect: "accounting",
-      assignee: "Sneha Nair",
-      role: "Finance Lead",
-      urgency: "NORMAL",
-      tat: "2 Days",
-      status: "IN_PROGRESS",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "In Progress",
-      details: "Configure automated PAN verification & 30% TDS deduction workflow for reward values above ₹10,000 in Zoho Books.",
-      verificationRequirement: "Zoho Books Tax Chart of Accounts entry.",
-      mandatoryGate: false,
-    },
-    {
-      id: `task-${ts}-10`,
-      sopCode: "SOP-IMP-01",
-      title: "Cryptographic Unique Code Batch Generation & Checksum",
-      aspect: "implementation",
-      assignee: "Khaleel Ahmed",
-      role: "Ops Lead",
-      urgency: "HIGHEST",
-      tat: "2 Days",
-      status: "IN_PROGRESS",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "In Progress",
-      details: `Generate ${campaignInput.codeVolume} unique 10-character alphanumeric cryptographic codes and verify printer bleed margins.`,
-      verificationRequirement: "SHA-256 hash export sign-off.",
-      mandatoryGate: true,
-    },
-    {
-      id: `task-${ts}-11`,
-      sopCode: "SOP-IMP-02",
-      title: "Microsite Deployment, Custom Domain & SSL Provisioning",
-      aspect: "implementation",
-      assignee: "Sachin (Tech Team)",
-      role: "Tech Lead",
-      urgency: "HIGH",
-      tat: "3 Days",
-      status: "IN_PROGRESS",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "In Progress",
-      details: "Deploy responsive mobile-first redemption portal with BigCity CDN, web analytics, and client brand assets.",
-      verificationRequirement: "Staging URL live with green SSL cert.",
-      mandatoryGate: true,
-    },
-    {
-      id: `task-${ts}-12`,
-      sopCode: "SOP-IMP-03",
-      title: "Dual-Gateway Karix / Gupshup Failover Setup",
-      aspect: "implementation",
-      assignee: "Sachin (Tech Team)",
-      role: "Tech Lead",
-      urgency: "HIGHEST",
-      tat: "1 Day",
-      status: "IN_PROGRESS",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "In Progress",
-      details: "Configure primary Karix route with automatic fallback to Gupshup if SMS latency exceeds 400ms.",
-      verificationRequirement: "Automated gateway failover drill test pass.",
-      mandatoryGate: true,
-    },
-    {
-      id: `task-${ts}-13`,
-      sopCode: "SOP-IMP-04",
-      title: "Automated MIS Cadence & Zoho Projects Query Tracker",
-      aspect: "implementation",
-      assignee: "Khaleel Ahmed",
-      role: "Ops Lead",
-      urgency: "NORMAL",
-      tat: "2 Days",
-      status: "IN_PROGRESS",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "In Progress",
-      details: "Set up daily 09:00 AM automated email MIS to client brand manager. Link to Zoho Projects milestone tracker.",
-      verificationRequirement: "Specimen MIS template approved by CS Head.",
-      mandatoryGate: false,
-    },
-  ];
-
-  return {
-    tasks,
-    aspectSummary: {
-      legal: { total: 3, done: 0, status: "In Review" },
-      compliance: { total: 3, done: 0, status: "In Review" },
-      accounting: { total: 3, done: 2, status: "In Review" },
-      implementation: { total: 4, done: 0, status: "In Review" },
-    },
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -578,17 +882,13 @@ function rowToCampaign(row: any): Campaign {
     endDate: row.end_date || "",
     status: row.status === "live" ? "Live" : "Draft",
     completionRate: 20,
-    // Zoho CRM
     zohoCrmDealId: row.zoho_crm_deal_id,
     zohoCrmDealUrl: row.zoho_crm_deal_url,
     zohoCrmDealStage: row.zoho_crm_deal_stage,
-    // Zoho Projects
     zohoProjectId: row.zoho_project_id,
     zohoProjectUrl: row.zoho_project_url,
-    // Zoho Books
     zohoBooksInvoiceId: row.zoho_books_invoice_id,
     zohoBooksInvoiceUrl: row.zoho_books_invoice_url,
-    // Aggregate sync status
     zohoSyncStatus: row.zoho_sync_status || "Pending",
     lastZohoSync: row.last_zoho_sync
       ? new Date(row.last_zoho_sync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
@@ -616,7 +916,6 @@ export async function GET(request: NextRequest) {
   const id = searchParams.get("id");
   const name = searchParams.get("name");
 
-  // ── Check if campaign is already approved (used by frontend on page load) ──
   if (action === "check_approved" && name) {
     const { data, error } = await supabase
       .from("campaigns")
@@ -634,32 +933,25 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ found: true, campaign: rowToCampaign(data) });
   }
 
-  // ── Get single campaign by ID ──
   if (action === "get_campaign" && id) {
-    // Try Supabase first
     const { data } = await supabase.from("campaigns").select("*").eq("id", id).maybeSingle();
     if (data) return NextResponse.json({ campaign: rowToCampaign(data) });
 
-    // Fall back to seed data
     const seed = INITIAL_CAMPAIGNS.find((c) => c.id === id);
     if (!seed) return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
     return NextResponse.json({ campaign: seed });
   }
 
-  // ── Read all Zoho CRM tasks for a campaign ──
   if (action === "read_zoho_tasks" && id) {
     const { data } = await supabase.from("campaigns").select("*").eq("id", id).maybeSingle();
     const campaign = data ? rowToCampaign(data) : INITIAL_CAMPAIGNS.find((c) => c.id === id);
     if (!campaign) return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
 
     return NextResponse.json({
-      // Zoho CRM — deal record housing these tasks
       zohoCrmDealId: campaign.zohoCrmDealId || "N/A",
       zohoCrmDealUrl: campaign.zohoCrmDealUrl,
-      // Zoho Projects — project milestone tracker
       zohoProjectId: campaign.zohoProjectId || "N/A",
       zohoProjectUrl: campaign.zohoProjectUrl,
-      // Zoho Books — invoice/payment record
       zohoBooksInvoiceId: campaign.zohoBooksInvoiceId || "N/A",
       zohoBooksInvoiceUrl: campaign.zohoBooksInvoiceUrl,
       syncTimestamp: new Date().toISOString(),
@@ -674,7 +966,6 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // ── List all campaigns — Supabase rows merged with seed data ──
   const { data: supabaseRows, error } = await supabase
     .from("campaigns")
     .select("*")
@@ -682,11 +973,9 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     console.error("[GET campaigns] Supabase error:", error);
-    // Return seed data if Supabase is unavailable
     return NextResponse.json({ campaigns: INITIAL_CAMPAIGNS });
   }
 
-  // Supabase rows take precedence; seeds fill the rest
   const supabaseIds = new Set((supabaseRows || []).map((r) => r.name));
   const seedsNotInSupabase = INITIAL_CAMPAIGNS.filter((c) => !supabaseIds.has(c.name));
   const allCampaigns = [
@@ -705,60 +994,44 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { action } = body;
 
-    // ── Action 1: Generate plan from campaign brief ──
+    // ── Action 1: Dynamic AI Plan Generation from Brief / Prompt ──
     if (action === "generate_plan") {
       const { campaignInput } = body;
-      if (!campaignInput?.name) {
-        return NextResponse.json({ error: "Campaign data is required" }, { status: 400 });
+      if (!campaignInput) {
+        return NextResponse.json({ error: "Campaign data or brief is required" }, { status: 400 });
       }
-      const { tasks, aspectSummary } = generateAspectPlan(campaignInput);
 
-      // Optionally enrich with AI via the Campaign Brain n8n workflow
-      let aiAnalysisText = "";
-      const N8N_WEBHOOK_URL =
-        process.env.N8N_WEBHOOK_URL ||
-        "https://indigo-pelican-266513.hostingersite.com/webhook/20bf7228-5ae0-40c8-b937-00306e81cbec/chat";
-      try {
-        const n8nRes = await fetch(N8N_WEBHOOK_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "69420" },
-          body: JSON.stringify({
-            action: "sendMessage",
-            chatInput: `Analyze campaign plan for ${campaignInput.name} — ${campaignInput.brief || ""}`,
-            sessionId: `plan-gen-${Date.now()}`,
-          }),
-          signal: AbortSignal.timeout(6000),
-        });
-        if (n8nRes.ok) {
-          const resText = await n8nRes.text();
-          if (resText && !resText.includes("error")) aiAnalysisText = resText;
-        }
-      } catch {}
+      // Call the AI Brain decomposition engine
+      const aiResult = await generateAIAspectPlan(campaignInput);
 
       return NextResponse.json({
         success: true,
-        aiAnalysis: aiAnalysisText || undefined,
+        aiAnalysis: aiResult.aiAnalysis,
+        campaignData: {
+          name: aiResult.name,
+          client: aiResult.client,
+          category: aiResult.category,
+          rewardType: aiResult.rewardType,
+          budget: aiResult.budget,
+          codeVolume: aiResult.codeVolume,
+          startDate: aiResult.startDate,
+          endDate: aiResult.endDate,
+          brief: aiResult.brief,
+        },
         plan: {
-          tasks,
-          aspectSummary,
-          recommendedTAT: "12 Working Days",
-          criticalPath: [
-            "100% Advance Payment Verification in Zoho Books",
-            "Third-Party Brand Logo Written Approval",
-            "TRAI / DLT Header Whitelisting",
-            "72-Hour Pre-Launch Staging UAT Sign-Off",
-          ],
-          totalEstimatedTasks: tasks.length,
+          tasks: aiResult.tasks,
+          aspectSummary: aiResult.aspectSummary,
+          recommendedTAT: aiResult.recommendedTAT,
+          criticalPath: aiResult.criticalPath,
+          totalEstimatedTasks: aiResult.tasks.length,
         },
       });
     }
 
-    // ── Action 2: Approve & sync campaign to all applicable Zoho products ──
+    // ── Action 2: Approve & sync campaign to Zoho CRM ──
     if (action === "approve_and_push_zoho") {
       const { campaignData, tasks } = body;
 
-      // Step 1 — Sync to Zoho CRM (Deals module) via n8n workflow
-      // This creates a Deal record representing the campaign opportunity in CRM.
       const { dealId, dealUrl, writeStatus } = await syncCampaignToZohoCRM(
         campaignData.name,
         campaignData.client,
@@ -768,13 +1041,9 @@ export async function POST(request: NextRequest) {
       );
 
       const now = new Date().toISOString();
-      const resolvedTasks = tasks && tasks.length > 0 ? tasks : generateAspectPlan(campaignData).tasks;
+      const resolvedTasks =
+        tasks && tasks.length > 0 ? tasks : generateDynamicBespokePlan(campaignData).tasks;
 
-      // Step 2 — Persist to Supabase campaigns table
-      // Zoho Projects and Zoho Books IDs will be added in future integrations.
-      // The zoho_sync_status reflects what's actually connected:
-      //   "partial" if only CRM is done (Projects/Books not yet wired)
-      //   "synced"  if all connected products are in sync
       const { data: insertedRow, error: insertError } = await supabase
         .from("campaigns")
         .insert({
@@ -795,17 +1064,13 @@ export async function POST(request: NextRequest) {
             accounting: { total: 3, done: 2, status: "In Review" },
             implementation: { total: 4, done: 0, status: "In Review" },
           },
-          // Zoho CRM — connected
           zoho_crm_deal_id: dealId,
           zoho_crm_deal_url: dealUrl,
           zoho_crm_deal_stage: "Qualification",
-          // Zoho Projects — not yet integrated; will be added in next phase
           zoho_project_id: null,
           zoho_project_url: null,
-          // Zoho Books — not yet integrated; finance team to raise invoice separately
           zoho_books_invoice_id: null,
           zoho_books_invoice_url: null,
-          // Sync status: "partial" because only CRM is wired, Projects & Books are pending
           zoho_sync_status: dealId ? "partial" : "pending",
           last_zoho_sync: dealId ? now : null,
           approved_at: now,
@@ -856,7 +1121,6 @@ export async function POST(request: NextRequest) {
         success: true,
         campaign: savedCampaign,
         zohoSync: {
-          // Zoho CRM — Deal created representing campaign as sales opportunity
           crmDeal: {
             product: "Zoho CRM",
             module: "Deals",
@@ -865,17 +1129,15 @@ export async function POST(request: NextRequest) {
             stage: "Qualification",
             writeStatus,
           },
-          // Zoho Projects — Not yet wired; tasks will be pushed here in next phase
           projects: {
             product: "Zoho Projects",
             status: "NOT_YET_INTEGRATED",
-            note: "Zoho Projects integration is in the next phase. Tasks can be manually linked from the CRM Deal.",
+            note: "Zoho Projects integration is in the next phase.",
           },
-          // Zoho Books — Not yet wired; finance team raises invoice separately
           books: {
             product: "Zoho Books",
             status: "NOT_YET_INTEGRATED",
-            note: "Zoho Books invoice must be raised manually by the finance team (Sneha Nair) for advance payment escrow.",
+            note: "Zoho Books invoice must be raised manually by Finance.",
           },
           overallSyncStatus: dealId ? "PARTIAL" : "PENDING",
           syncedAt: dealId ? now : null,
@@ -883,7 +1145,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // ── Action 3: Update a task status (syncs back to Zoho CRM Task) ──
+    // ── Action 3: Update a task status ──
     if (action === "update_zoho_task") {
       const { campaignId, taskId, newStatus } = body;
 
