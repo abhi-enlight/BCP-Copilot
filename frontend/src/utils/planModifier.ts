@@ -208,7 +208,7 @@ export function applyPlanModifications(
     lower.includes("failover");
 
   if (isImprovementIntent) {
-    const strategicAdditions: Omit<AspectTask, "id" | "sopCode" | "zohoTaskId" | "zohoTaskStatus">[] = [
+    const strategicAdditions: Omit<AspectTask, "id" | "sopCode" | "zohoCrmTaskId" | "zohoTaskStatus">[] = [
       {
         title: "Dual-Gateway Karix / Gupshup 30s Auto-Failover Setup",
         aspect: "implementation",
@@ -284,8 +284,8 @@ export function applyPlanModifications(
           ...item,
           id: newId,
           sopCode,
-          zohoTaskId: `ZP-T-${Math.floor(100000 + Math.random() * 900000)}`,
-          zohoTaskStatus: "Open",
+          zohoCrmTaskId: `ZP-T-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "Open",
         };
         tasks.push(newTask);
         modifiedTaskIds.push(newId);
@@ -638,8 +638,8 @@ export function applyPlanModifications(
       urgency: lower.includes("urgent") || lower.includes("critical") ? "HIGHEST" : "HIGH",
       tat: lower.includes("24h") || lower.includes("1 day") ? "1 Day" : lower.includes("3 day") ? "3 Days" : "2 Days",
       status: "PENDING_APPROVAL",
-      zohoTaskId: `ZP-T-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoTaskStatus: "Open",
+      zohoCrmTaskId: `ZP-T-${Math.floor(100000 + Math.random() * 900000)}`,
+      zohoCrmTaskStatus: "Open",
       details: input,
       verificationRequirement: `${defaultMember.role} sign-off required prior to Go-Live`,
       mandatoryGate: true,
@@ -772,8 +772,8 @@ export function syncTasksFromAIResponse(
             urgency: /highest|critical|urgent/i.test(trimmed) ? "HIGHEST" : /medium/i.test(trimmed) ? "MEDIUM" : "HIGH",
             tat: /1\s*day|24h/i.test(trimmed) ? "1 Day" : /3\s*day/i.test(trimmed) ? "3 Days" : "2 Days",
             status: "PENDING_APPROVAL",
-            zohoTaskId: `ZP-T-${Math.floor(100000 + Math.random() * 900000)}`,
-            zohoTaskStatus: "Open",
+            zohoCrmTaskId: `ZP-T-${Math.floor(100000 + Math.random() * 900000)}`,
+            zohoCrmTaskStatus: "Open",
             details: trimmed,
             verificationRequirement: `${fallbackMember.role} sign-off required prior to Go-Live`,
             mandatoryGate: true,

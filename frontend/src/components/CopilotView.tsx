@@ -52,10 +52,19 @@ interface WorkingPlanState {
   tasks: AspectTask[];
   aspectSummary: any;
   status: "draft" | "syncing" | "live";
+  // Zoho CRM — Deal record for this campaign as a sales/client opportunity
+  zohoCrmDealId?: string;
+  zohoCrmDealUrl?: string;
+  // Zoho Projects — project milestone tracking (future integration)
   zohoProjectId?: string;
   zohoProjectUrl?: string;
+  // Zoho Books — invoice / advance payment (future integration)
+  zohoBooksInvoiceId?: string;
+  // Aggregate sync status across all Zoho products
+  zohoSyncStatus?: "Pending" | "Partial" | "Synced" | "Failed";
   lastUpdatedAspect?: string;
 }
+
 
 interface CopilotViewProps {
   initialPlanContext?: PlanContextForCopilot | null;
@@ -222,27 +231,68 @@ export default function CopilotView({
     if (lastProcessedContextRef.current === contextKey) return;
     lastProcessedContextRef.current = contextKey;
 
-    const newWorkingPlan: WorkingPlanState = {
-      campaignData: initialPlanContext.campaignData,
-      tasks: initialPlanContext.plan.tasks,
-      aspectSummary: initialPlanContext.plan.aspectSummary,
-      status: "draft",
+    // Check Supabase first — has this campaign already been approved & synced?
+    // This prevents the "Approve" button from reappearing on page refresh.
+    const checkExistingApproval = async (): Promise<boolean> => {
+      try {
+        const res = await fetch(
+          `/api/campaigns?action=check_approved&name=${encodeURIComponent(initialPlanContext.campaignData.name)}`
+        );
+        if (res.ok) {
+          const json = await res.json();
+          if (json.found && json.campaign) {
+            setWorkingPlan({
+              campaignData: initialPlanContext.campaignData,
+              tasks: json.campaign.tasks?.length > 0 ? json.campaign.tasks : initialPlanContext.plan.tasks,
+              aspectSummary: json.campaign.aspectSummary || initialPlanContext.plan.aspectSummary,
+              status: "live",
+              zohoCrmDealId: json.campaign.zohoCrmDealId,
+              zohoCrmDealUrl: json.campaign.zohoCrmDealUrl,
+              zohoProjectId: json.campaign.zohoProjectId,
+              zohoBooksInvoiceId: json.campaign.zohoBooksInvoiceId,
+              zohoSyncStatus: json.campaign.zohoSyncStatus,
+            });
+            showToast("Campaign already approved & synced to Zoho CRM", "check");
+            return true;
+          }
+        }
+      } catch (e) {
+        console.error("[check_approved] Supabase check failed:", e);
+      }
+      return false;
     };
-    setWorkingPlan(newWorkingPlan);
-    setSelectedAspectFilter("all");
-    setTaskSearchQuery("");
 
-    const newSess = createSession(`Plan: ${initialPlanContext.campaignData.name}`);
-    const initialGreeting: Message = {
-      id: `msg-${Date.now()}-assistant`,
-      role: "assistant",
-      content: `Draft AI Project Plan loaded for **${initialPlanContext.campaignData.name}**\n\n**Client**: ${initialPlanContext.campaignData.client}  \n**Budget**: ${initialPlanContext.campaignData.budget}  \n**Volume**: ${initialPlanContext.campaignData.codeVolume}  \n**Estimated TAT**: 12 Working Days  \n\n### 4-Aspect Breakdown (${initialPlanContext.plan.tasks.length} Total Tasks):\n\n* **Legal** (${initialPlanContext.plan.tasks.filter((t: any) => t.aspect === "legal").length} Tasks): Terms & conditions drafting, partner consent verification, disclaimer compliance.\n* **Compliance** (${initialPlanContext.plan.tasks.filter((t: any) => t.aspect === "compliance").length} Tasks): DLT / TRAI header whitelisting, regulatory approvals, 72h staging UAT sign-off.\n* **Accounting** (${initialPlanContext.plan.tasks.filter((t: any) => t.aspect === "accounting").length} Tasks): Advance escrow receipt verification in Zoho Books, GST mapping.\n* **Tech & Operations** (${initialPlanContext.plan.tasks.filter((t: any) => t.aspect === "implementation").length} Tasks): Cryptographic QR batch generation, CDN provisioning, gateway failover routing.\n\nYou can modify owners (e.g. _"assign all legal tasks to Akash Verma"_), adjust timelines, or add custom requirements directly in this chat or on the plan canvas. When ready, click **Approve & Push to Zoho** on the right or reply with **"Approve"**.`,
-      timestamp: new Date(),
-    };
-    newSess.messages = [initialGreeting];
-    setSession(newSess);
-    userHasScrolledUpRef.current = false;
-    showToast(`Loaded ${initialPlanContext.plan.tasks.length} tasks for ${initialPlanContext.campaignData.name}`, "sparkle");
+    checkExistingApproval().then((alreadyApproved) => {
+      setSelectedAspectFilter("all");
+      setTaskSearchQuery("");
+      if (!alreadyApproved) {
+        setWorkingPlan({
+          campaignData: initialPlanContext.campaignData,
+          tasks: initialPlanContext.plan.tasks,
+          aspectSummary: initialPlanContext.plan.aspectSummary,
+          status: "draft",
+        });
+      }
+      const newSess = createSession(`Plan: ${initialPlanContext.campaignData.name}`);
+      const legalCount = initialPlanContext.plan.tasks.filter((t) => t.aspect === "legal").length;
+      const compCount = initialPlanContext.plan.tasks.filter((t) => t.aspect === "compliance").length;
+      const accCount = initialPlanContext.plan.tasks.filter((t) => t.aspect === "accounting").length;
+      const impCount = initialPlanContext.plan.tasks.filter((t) => t.aspect === "implementation").length;
+      const initialGreeting: Message = {
+        id: `msg-${Date.now()}-assistant`,
+        role: "assistant",
+        content: alreadyApproved
+          ? `Campaign **${initialPlanContext.campaignData.name}** is already **Live** and synced to Zoho CRM.\n\n**Client**: ${initialPlanContext.campaignData.client}  \n**Budget**: ${initialPlanContext.campaignData.budget}  \n**Volume**: ${initialPlanContext.campaignData.codeVolume}  \n\nYou can view it in the Campaigns dashboard or ask me any questions.`
+          : `Draft AI Project Plan loaded for **${initialPlanContext.campaignData.name}**\n\n**Client**: ${initialPlanContext.campaignData.client}  \n**Budget**: ${initialPlanContext.campaignData.budget}  \n**Volume**: ${initialPlanContext.campaignData.codeVolume}  \n**Estimated TAT**: 12 Working Days  \n\n### 4-Aspect Breakdown (${initialPlanContext.plan.tasks.length} Total Tasks):\n\n* **Legal** (${legalCount} Tasks): Terms & conditions drafting, partner consent verification, disclaimer compliance.\n* **Compliance** (${compCount} Tasks): DLT / TRAI header whitelisting, regulatory approvals, 72h staging UAT sign-off.\n* **Accounting** (${accCount} Tasks): Advance escrow receipt verification in Zoho Books, GST mapping.\n* **Tech & Operations** (${impCount} Tasks): Cryptographic QR batch generation, CDN provisioning, gateway failover routing.\n\nWhen ready, click **Approve & Sync to Zoho CRM** on the right or reply with **"Approve"**.`,
+        timestamp: new Date(),
+      };
+      newSess.messages = [initialGreeting];
+      setSession(newSess);
+      userHasScrolledUpRef.current = false;
+      if (!alreadyApproved) {
+        showToast(`Loaded ${initialPlanContext.plan.tasks.length} tasks for ${initialPlanContext.campaignData.name}`, "sparkle");
+      }
+    });
   }, [initialPlanContext, showToast]);
 
   // Filtered tasks computation
@@ -262,7 +312,7 @@ export default function CopilotView({
     });
   }, [workingPlan, selectedAspectFilter, taskSearchQuery]);
 
-  // Handle live approve & push to Zoho Projects
+  // Handle approve & sync campaign to Zoho CRM (Deal), Zoho Projects, Zoho Books
   const handleApprovePlanToZoho = async () => {
     if (!workingPlan || workingPlan.status === "live") return;
 
@@ -283,27 +333,48 @@ export default function CopilotView({
       if (res.ok) {
         const data = await res.json();
         const created = data.campaign as Campaign;
+        const zohoSync = data.zohoSync;
         const assignedNames = Array.from(new Set(workingPlan.tasks.map((t) => t.assignee))).join(", ");
 
+        // Restore all Zoho product IDs into working plan state
         setWorkingPlan((prev) =>
           prev
             ? {
                 ...prev,
                 status: "live",
-                zohoProjectId: created.zohoProjectId || "ZP-881290",
-                zohoProjectUrl:
-                  created.zohoProjectUrl || "https://projects.zoho.in",
+                zohoCrmDealId: created.zohoCrmDealId,
+                zohoCrmDealUrl: created.zohoCrmDealUrl,
+                zohoProjectId: created.zohoProjectId,
+                zohoProjectUrl: created.zohoProjectUrl,
+                zohoBooksInvoiceId: created.zohoBooksInvoiceId,
+                zohoSyncStatus: created.zohoSyncStatus,
               }
             : null
         );
 
-        showToast(`Approved & Synced to Zoho Projects (${created.zohoProjectId || "ZP-881290"})`, "check");
+        const crmDealId = zohoSync?.crmDeal?.dealId;
+        showToast(
+          crmDealId
+            ? `Approved & synced to Zoho CRM — Deal ${crmDealId}`
+            : `Approved & saved — Zoho CRM sync ${zohoSync?.crmDeal?.writeStatus || "QUEUED"}`,
+          "check"
+        );
 
-        // Add confirmation message to chat
         const confirmationMsg: Message = {
           id: `msg-${Date.now()}-assistant`,
           role: "assistant",
-          content: `**Plan Approved and Pushed to Zoho Projects**\n\n* **Zoho Project ID**: \`${created.zohoProjectId || "ZP-881290"}\`\n* **Client**: ${created.client}\n* **Tasks Synchronized**: ${workingPlan.tasks.length} tasks across 4 milestone gates\n* **Sync Status**: Live (REST API sync active, latency: 32ms)\n\nAll assigned SPOCs (${assignedNames}) have been provisioned in BigCity Portal #81293.`,
+          content:
+            `**Campaign Approved & Synced**\n\n` +
+            `* **Client**: ${created.client}\n` +
+            `* **Tasks Saved**: ${workingPlan.tasks.length} tasks across 4 milestone aspects\n\n` +
+            `### Zoho Product Sync Status\n\n` +
+            `| Product | Purpose | Status | ID |\n` +
+            `|---------|---------|--------|----|\n` +
+            `| **Zoho CRM** | Campaign Deal (client opportunity & SOW) | ${crmDealId ? "✅ Synced" : "⏳ Pending"} | ${crmDealId ? `\`${crmDealId}\`` : "—"} |\n` +
+            `| **Zoho Projects** | Task & milestone execution tracker | 🔜 Next integration phase | — |\n` +
+            `| **Zoho Books** | Advance payment, escrow & GST invoicing | 🔜 Manual by Finance | — |\n\n` +
+            `SPOCs assigned: ${assignedNames}\n` +
+            `> Finance team (Sneha Nair) should raise the Zoho Books invoice for advance payment escrow confirmation.`,
           timestamp: new Date(),
         };
 
@@ -313,8 +384,8 @@ export default function CopilotView({
         }));
       }
     } catch (e) {
-      console.error("Failed to push plan to Zoho Projects", e);
-      showToast("Failed to push to Zoho Projects", "info");
+      console.error("Failed to sync campaign to Zoho", e);
+      showToast("Failed to sync to Zoho — check network", "info");
     } finally {
       setIsPushingToZoho(false);
     }
@@ -378,8 +449,8 @@ export default function CopilotView({
       urgency: newTaskForm.urgency,
       tat: newTaskForm.tat,
       status: "PENDING_APPROVAL",
-      zohoTaskId: `ZP-T-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoTaskStatus: "Open",
+      zohoCrmTaskId: `ZP-T-${Math.floor(100000 + Math.random() * 900000)}`,
+      zohoCrmTaskStatus: "Open",
       details: newTaskForm.details || newTaskForm.title,
       verificationRequirement: `${newTaskForm.role} sign-off required before Go-Live`,
       mandatoryGate: true,
@@ -1075,7 +1146,7 @@ User Request: ${content}`;
                     }`}
                   >
                     <Kanban size={12} weight="fill" />
-                    {workingPlan.status === "live" ? `LIVE · ${workingPlan.zohoProjectId}` : "PLAN PREVIEW"}
+                    {workingPlan.status === "live" ? (workingPlan.zohoCrmDealId ? `LIVE · Zoho CRM · ${workingPlan.zohoCrmDealId}` : "LIVE · Zoho CRM") : "PLAN PREVIEW"}
                   </span>
                   <span className="text-[11px] font-medium text-stone-600 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200/60">
                     {workingPlan.campaignData.client}
@@ -1102,14 +1173,28 @@ User Request: ${content}`;
                 </button>
 
                 {workingPlan.status === "live" ? (
-                  <button
-                    type="button"
-                    onClick={onViewCampaigns}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs cursor-pointer transition-all"
-                  >
-                    <Kanban size={13} weight="bold" />
-                    <span>View in Campaigns</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {workingPlan.zohoCrmDealUrl && (
+                      <a
+                        href={workingPlan.zohoCrmDealUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-all"
+                        title="Open in Zoho CRM"
+                      >
+                        <ArrowSquareOut size={13} weight="bold" />
+                        <span>Zoho CRM</span>
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={onViewCampaigns}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs cursor-pointer transition-all"
+                    >
+                      <Kanban size={13} weight="bold" />
+                      <span>View in Campaigns</span>
+                    </button>
+                  </div>
                 ) : (
                   <button
                     type="button"
@@ -1120,12 +1205,12 @@ User Request: ${content}`;
                     {isPushingToZoho ? (
                       <>
                         <ArrowsClockwise size={13} className="animate-spin" />
-                        <span>Pushing…</span>
+                        <span>Syncing to Zoho…</span>
                       </>
                     ) : (
                       <>
                         <CheckCircle size={13} weight="fill" />
-                        <span>Approve & Push to Zoho</span>
+                        <span>Approve & Sync to Zoho CRM</span>
                       </>
                     )}
                   </button>
