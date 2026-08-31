@@ -679,7 +679,7 @@ export function applyPlanModifications(
 
   let summaryMarkdown = "";
   if (hasModifications) {
-    summaryMarkdown = `**Plan Successfully Updated Inline**\n\nI've modified the active project plan for **${updatedCampaign.name || "this campaign"}** based on your instruction:\n\n${changesSummary.join("\n")}\n\n**Current Milestone Breakdown:**\n* **Legal**: ${tasks.filter((t) => t.aspect === "legal").length} Tasks (Owner: ${tasks.find((t) => t.aspect === "legal")?.assignee || "Legal SPOC"})\n* **Compliance**: ${tasks.filter((t) => t.aspect === "compliance").length} Tasks\n* **Accounting**: ${tasks.filter((t) => t.aspect === "accounting").length} Tasks\n* **Tech & Ops**: ${tasks.filter((t) => t.aspect === "implementation").length} Tasks\n\nAll changes are reflected live on the right pane. Ready to push to Zoho Projects when you are!`;
+    summaryMarkdown = `**Plan Successfully Updated Inline**\n\nI've modified the active project plan for **${updatedCampaign.name || "this campaign"}** based on your instruction:\n\n${changesSummary.join("\n")}\n\n**Current Milestone Breakdown:**\n* **Legal**: ${tasks.filter((t) => t.aspect === "legal").length} Tasks (Owner: ${tasks.find((t) => t.aspect === "legal")?.assignee || "Legal SPOC"})\n* **Compliance**: ${tasks.filter((t) => t.aspect === "compliance").length} Tasks\n* **Accounting**: ${tasks.filter((t) => t.aspect === "accounting").length} Tasks\n* **Tech & Ops**: ${tasks.filter((t) => t.aspect === "implementation").length} Tasks\n\nAll changes are reflected live on the right pane. Ready to approve & sync to Zoho CRM when you are!`;
   }
 
   return {

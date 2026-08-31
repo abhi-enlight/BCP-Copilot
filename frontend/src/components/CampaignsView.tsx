@@ -185,7 +185,7 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
         setGeneratedPlan(plan);
         const initialAssistantContent = data.aiAnalysis
           ? `I've analyzed **${formData.name}** and generated the 4-aspect plan:\n\n${data.aiAnalysis}\n\nYou can review all tasks on the left. Let me know if you'd like to refine any deadlines or add specific requirements.`
-          : "I've drafted a 4-aspect plan based on your inputs. You can review the tasks on the left. Let me know if you need to add, remove, or modify any tasks before we push to Zoho Projects.";
+          : "I've drafted a 4-aspect plan based on your inputs. You can review the tasks on the left. Let me know if you need to add, remove, or modify any tasks before we approve & sync to Zoho CRM.";
 
         setChatMessages([
           {
@@ -206,7 +206,7 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
         {
           id: `msg-${Date.now()}-assistant`,
           role: "assistant",
-          content: "I've drafted a 4-aspect plan based on your inputs. You can review the tasks on the left. Let me know if you need to add, remove, or modify any tasks before we push to Zoho Projects.",
+          content: "I've drafted a 4-aspect plan based on your inputs. You can review the tasks on the left. Let me know if you need to add, remove, or modify any tasks before we approve & sync to Zoho CRM.",
           timestamp: new Date(),
         },
       ]);
@@ -276,12 +276,12 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
           setCreatedCampaign(data.campaign);
           setCampaigns((prev) => [data.campaign, ...prev]);
           setWizardStep("push_success");
-          showToast(`Approved & Synced to Zoho Projects (${data.campaign.zohoProjectId || "ZP-881290"})`, "check");
+          showToast(`Approved & Synced to Zoho CRM`, "check");
         }
       }, 1200);
     } catch (e) {
-      console.error("Failed to push to Zoho", e);
-      showToast("Failed to push to Zoho Projects", "info");
+      console.error("Failed to sync to Zoho", e);
+      showToast("Failed to sync to Zoho CRM", "info");
     }
   };
 
@@ -910,9 +910,9 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                       <ArrowsClockwise size={28} weight="bold" className="animate-spin" />
                     </div>
                     <div>
-                      <h4 className="text-[15px] font-bold text-stone-900">Writing to Zoho Projects…</h4>
+                      <h4 className="text-[15px] font-bold text-stone-900">Syncing to Zoho CRM…</h4>
                       <p className="text-xs text-stone-500 max-w-sm mt-1.5 leading-relaxed">
-                        Creating project in BigCity Portal #81293, building 4 milestone lists, and generating all tasks with assignees & due dates.
+                        Creating Deal in Zoho CRM, building 4 milestone aspects, and syncing all tasks with assignees & due dates.
                       </p>
                     </div>
                   </div>
@@ -926,11 +926,11 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                     </div>
                     <div>
                       <span className="text-[11px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-                        LIVE · {createdCampaign.zohoProjectId}
+                        LIVE · Zoho CRM
                       </span>
                       <h4 className="text-lg font-bold text-stone-900 mt-2 max-w-md">{createdCampaign.name}</h4>
                       <p className="text-xs text-stone-500 max-w-md mt-1.5 leading-relaxed">
-                        Pushed to Zoho Projects with 4 milestones and all aspect tasks initialized. Read & Write connections are live.
+                        Synced to Zoho CRM with 4 milestone aspects and all tasks initialized. Live synchronization active.
                       </p>
                     </div>
                     <div className="flex items-center gap-3 mt-2">
@@ -940,7 +940,7 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                         className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold cursor-pointer shadow-sm transition-all"
                       >
                         <Kanban size={14} weight="bold" />
-                        <span>Open Zoho Projects View</span>
+                        <span>Open Campaign Tasks</span>
                       </button>
                       <button
                         type="button"
