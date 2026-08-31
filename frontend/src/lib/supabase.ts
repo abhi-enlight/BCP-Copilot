@@ -1,10 +1,29 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+// Read from any standard Supabase env var name (Next.js public prefix or server-side standard)
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  process.env.SUPABASE_URL ||
+  "https://ejawdvxnddgkcgkasove.supabase.co";
 
-// Shared server-side Supabase client
-export const supabase = createClient(supabaseUrl, supabaseKey);
+const supabaseKey =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.SUPABASE_ANON_KEY ||
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqYXdkdnhuZGRna2Nna2Fzb3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxMDk5NDAsImV4cCI6MjEwMjY4NTk0MH0.BGjXCxnsuxhvtRg34bW0IJNpAsm1xVPz81TZMX9Yq4E";
+
+export const isSupabaseConfigured = Boolean(
+  (process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL) &&
+  (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)
+);
+
+// Resilient singleton Supabase client that never throws on module evaluation during Next.js build
+export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
+});
 
 /**
  * Represents a fully persisted campaign row in Supabase.
@@ -31,7 +50,7 @@ export interface CampaignRow {
   // Zoho CRM — Deals module (campaign as an opportunity/deal record)
   zoho_crm_deal_id: string | null;
   zoho_crm_deal_url: string | null;
-  zoho_crm_deal_stage: string | null; // e.g. "Qualification", "Proposal/Price Quote"
+  zoho_crm_deal_stage: string | null;
 
   // Zoho Projects — Project management (tasks, milestones)
   zoho_project_id: string | null;
