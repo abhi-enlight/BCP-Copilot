@@ -446,11 +446,6 @@ export default function UsersAndRolesView({ onUserCountChange }: UsersAndRolesVi
                     </span>
                   </div>
 
-                  {/* Department */}
-                  <span className="hidden lg:block text-[11px] text-stone-500 w-44 truncate text-right">
-                    {user.department}
-                  </span>
-
                   {/* Role Badge — clickable dropdown */}
                   <div className="relative flex-shrink-0">
                     <button

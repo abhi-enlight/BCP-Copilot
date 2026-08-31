@@ -27,6 +27,12 @@ export const BIGCITY_TEAM: TeamMember[] = [
     aspects: ["legal"],
   },
   {
+    name: "Siddharth Verma",
+    role: "Legal & Compliance Associate",
+    department: "Compliance & Governance",
+    aspects: ["legal", "compliance"],
+  },
+  {
     name: "Khaleel Ahmed",
     role: "Compliance SPOC / Ops Lead",
     department: "Compliance & Operations",
@@ -74,6 +80,12 @@ export const BIGCITY_TEAM: TeamMember[] = [
     department: "Platforms & OTP Gateways",
     aspects: ["implementation"],
   },
+  {
+    name: "Tanvi Joshi",
+    role: "Reward Operations Lead",
+    department: "Vendor & Reward Operations",
+    aspects: ["implementation", "accounting"],
+  },
 ];
 
 export interface PlanModificationResult {
@@ -95,23 +107,43 @@ export interface PlanModificationResult {
 }
 
 /**
- * Match a target team member name from natural language query
+ * Extract target assignee name from natural language query
+ */
+export function extractRequestedAssigneeName(query: string): string | null {
+  const match =
+    query.match(/(?:assign|reassign|give|hand\s*over)\s+(?:all\s+)?(?:[\w&/\s]+\s+)?to\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)/i) ||
+    query.match(/(?:make|set)\s+([A-Za-z]+(?:\s+[A-Za-z]+)?)\s+(?:the\s+)?(?:owner|assignee|lead)/i) ||
+    query.match(/(?:owner|assignee)\s*(?:to|=)\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)/i);
+
+  if (match && match[1]) {
+    const raw = match[1].trim();
+    const lowerRaw = raw.toLowerCase();
+    const blacklist = ["legal", "compliance", "accounting", "tech", "implementation", "all", "the", "me", "him", "her", "them", "task", "tasks", "stream", "workstream"];
+    if (!blacklist.includes(lowerRaw)) {
+      return raw;
+    }
+  }
+  return null;
+}
+
+/**
+ * Match a target team member from natural language query
  */
 export function findTeamMember(query: string): TeamMember | null {
   const q = query.toLowerCase();
+
+  // Explicit name matches
   if (q.includes("akash") || q.includes("aakash")) {
-    return BIGCITY_TEAM.find((m) => m.name.toLowerCase().includes("akash")) || {
-      name: "Akash Verma",
-      role: "Legal Counsel",
-      department: "Legal & Commercial Contracts",
-      aspects: ["legal"],
-    };
+    return BIGCITY_TEAM.find((m) => m.name.toLowerCase().includes("akash")) || null;
   }
   if (q.includes("prashant")) {
     return BIGCITY_TEAM.find((m) => m.name.toLowerCase().includes("prashant")) || null;
   }
   if (q.includes("kavita")) {
     return BIGCITY_TEAM.find((m) => m.name.toLowerCase().includes("kavita")) || null;
+  }
+  if (q.includes("siddharth")) {
+    return BIGCITY_TEAM.find((m) => m.name.toLowerCase().includes("siddharth")) || null;
   }
   if (q.includes("khaleel")) {
     return BIGCITY_TEAM.find((m) => m.name.toLowerCase().includes("khaleel")) || null;
@@ -137,8 +169,11 @@ export function findTeamMember(query: string): TeamMember | null {
   if (q.includes("arjun")) {
     return BIGCITY_TEAM.find((m) => m.name.toLowerCase().includes("arjun")) || null;
   }
+  if (q.includes("tanvi")) {
+    return BIGCITY_TEAM.find((m) => m.name.toLowerCase().includes("tanvi")) || null;
+  }
 
-  // Generic check
+  // Generic check across team directory
   for (const member of BIGCITY_TEAM) {
     const firstName = member.name.split(" ")[0].toLowerCase();
     if (q.includes(firstName)) return member;
@@ -276,9 +311,21 @@ export function applyPlanModifications(
     lower.includes("hand over");
 
   if (isReassignIntent) {
+    const requestedName = extractRequestedAssigneeName(input);
     const targetMember = findTeamMember(input);
-    const targetAssigneeName = targetMember ? targetMember.name : "Akash Verma";
-    const targetRole = targetMember ? targetMember.role : "Legal Counsel";
+
+    // If a specific person's name was requested but that person does NOT exist in the directory:
+    if (requestedName && !targetMember) {
+      const availableList = BIGCITY_TEAM.map((m) => `**${m.name}** (${m.role})`).join("\n* ");
+      return {
+        hasModifications: false,
+        updatedTasks: tasks,
+        updatedCampaignData: updatedCampaign,
+        modifiedTaskIds: [],
+        summaryMarkdown: `⚠️ **User Not Found in Team Directory**\n\nNo team member named **"${requestedName}"** was found in the BigCity organization directory. Task assignments were not modified.\n\n**Available Team Members:**\n* ${availableList}\n\n*To assign tasks to ${requestedName}, please invite them via the **Users & Roles** tab first.*`,
+        actionType: "none",
+      };
+    }
 
     // Check if target is an aspect (legal, compliance, accounting, tech/implementation)
     let targetAspect: "legal" | "compliance" | "accounting" | "implementation" | null = null;
@@ -292,65 +339,83 @@ export function applyPlanModifications(
       targetAspect = "implementation";
     }
 
-    // Check if targeting a specific task index (e.g. "task 1", "task #2", "first task")
-    const taskIndexMatch = lower.match(/task\s*(?:#|no\.?|number)?\s*(\d+)/i);
-    const specificIndex = taskIndexMatch ? parseInt(taskIndexMatch[1], 10) - 1 : null;
+    // If no target member found and no requested name either, check if assigning to default aspect lead
+    let finalTarget = targetMember;
+    if (!finalTarget && targetAspect) {
+      finalTarget =
+        targetAspect === "legal"
+          ? BIGCITY_TEAM[0]
+          : targetAspect === "compliance"
+          ? BIGCITY_TEAM[4]
+          : targetAspect === "accounting"
+          ? BIGCITY_TEAM[6]
+          : BIGCITY_TEAM[5];
+    }
 
-    if (specificIndex !== null && specificIndex >= 0 && specificIndex < tasks.length) {
-      // Single task reassignment
-      const oldAssignee = tasks[specificIndex].assignee;
-      tasks[specificIndex] = {
-        ...tasks[specificIndex],
-        assignee: targetAssigneeName,
-        role: targetRole,
-      };
-      modifiedTaskIds.push(tasks[specificIndex].id);
-      changesSummary.push(
-        `• **${tasks[specificIndex].sopCode} (${tasks[specificIndex].title})**: Reassigned from _${oldAssignee}_ → **${targetAssigneeName}** (${targetRole})`
-      );
-      actionType = actionType === "none" ? "reassign" : "multiple";
-    } else if (targetAspect) {
-      // Bulk aspect reassignment (e.g., "assign all legal tasks to Akash Verma")
-      let count = 0;
-      tasks = tasks.map((t) => {
-        if (t.aspect === targetAspect) {
-          count++;
-          modifiedTaskIds.push(t.id);
-          return {
-            ...t,
-            assignee: targetAssigneeName,
-            role: targetRole,
-          };
-        }
-        return t;
-      });
+    if (finalTarget) {
+      const targetAssigneeName = finalTarget.name;
+      const targetRole = finalTarget.role;
 
-      if (count > 0) {
+      // Check if targeting a specific task index (e.g. "task 1", "task #2", "first task")
+      const taskIndexMatch = lower.match(/task\s*(?:#|no\.?|number)?\s*(\d+)/i);
+      const specificIndex = taskIndexMatch ? parseInt(taskIndexMatch[1], 10) - 1 : null;
+
+      if (specificIndex !== null && specificIndex >= 0 && specificIndex < tasks.length) {
+        // Single task reassignment
+        const oldAssignee = tasks[specificIndex].assignee;
+        tasks[specificIndex] = {
+          ...tasks[specificIndex],
+          assignee: targetAssigneeName,
+          role: targetRole,
+        };
+        modifiedTaskIds.push(tasks[specificIndex].id);
         changesSummary.push(
-          `• Reassigned **all ${count} ${targetAspect.toUpperCase()} tasks** to **${targetAssigneeName}** (${targetRole})`
+          `• **${tasks[specificIndex].sopCode} (${tasks[specificIndex].title})**: Reassigned from _${oldAssignee}_ → **${targetAssigneeName}** (${targetRole})`
         );
         actionType = actionType === "none" ? "reassign" : "multiple";
-      }
-    } else if (targetMember) {
-      // General match: reassign tasks matching targetMember's primary aspect or first matching
-      let count = 0;
-      tasks = tasks.map((t) => {
-        if (targetMember.aspects.includes(t.aspect)) {
-          count++;
-          modifiedTaskIds.push(t.id);
-          return {
-            ...t,
-            assignee: targetMember.name,
-            role: targetMember.role,
-          };
+      } else if (targetAspect) {
+        // Bulk aspect reassignment
+        let count = 0;
+        tasks = tasks.map((t) => {
+          if (t.aspect === targetAspect) {
+            count++;
+            modifiedTaskIds.push(t.id);
+            return {
+              ...t,
+              assignee: targetAssigneeName,
+              role: targetRole,
+            };
+          }
+          return t;
+        });
+
+        if (count > 0) {
+          changesSummary.push(
+            `• Reassigned **all ${count} ${targetAspect.toUpperCase()} tasks** to **${targetAssigneeName}** (${targetRole})`
+          );
+          actionType = actionType === "none" ? "reassign" : "multiple";
         }
-        return t;
-      });
-      if (count > 0) {
-        changesSummary.push(
-          `• Reassigned **${count} matching tasks** to **${targetMember.name}** (${targetMember.role})`
-        );
-        actionType = actionType === "none" ? "reassign" : "multiple";
+      } else {
+        // General match: reassign tasks matching targetMember's primary aspects
+        let count = 0;
+        tasks = tasks.map((t) => {
+          if (finalTarget!.aspects.includes(t.aspect)) {
+            count++;
+            modifiedTaskIds.push(t.id);
+            return {
+              ...t,
+              assignee: finalTarget!.name,
+              role: finalTarget!.role,
+            };
+          }
+          return t;
+        });
+        if (count > 0) {
+          changesSummary.push(
+            `• Reassigned **${count} matching tasks** to **${finalTarget.name}** (${finalTarget.role})`
+          );
+          actionType = actionType === "none" ? "reassign" : "multiple";
+        }
       }
     }
   }
@@ -537,12 +602,12 @@ export function applyPlanModifications(
 
     const defaultMember =
       aspect === "legal"
-        ? BIGCITY_TEAM.find((m) => m.name.includes("Akash")) || BIGCITY_TEAM[0]
+        ? BIGCITY_TEAM[0]
         : aspect === "compliance"
-        ? BIGCITY_TEAM.find((m) => m.name.includes("Khaleel")) || BIGCITY_TEAM[3]
+        ? BIGCITY_TEAM[4]
         : aspect === "accounting"
-        ? BIGCITY_TEAM.find((m) => m.name.includes("Sneha")) || BIGCITY_TEAM[5]
-        : BIGCITY_TEAM.find((m) => m.name.includes("Sachin")) || BIGCITY_TEAM[4];
+        ? BIGCITY_TEAM[6]
+        : BIGCITY_TEAM[5];
 
     let title = input
       .replace(/^(please\s+|can\s+you\s+|kindly\s+)?(add|create|include)\s+(a\s+)?(new\s+)?(task\s+)?(for\s+|to\s+)?/i, "")
@@ -642,7 +707,6 @@ export function syncTasksFromAIResponse(
   let tasks = [...currentTasks];
   const modifiedIds: string[] = [];
 
-  // Match Markdown table rows: | SOP-LEG-01 | Title | Aspect | Assignee | TAT | Urgency |
   const lines = responseText.split("\n");
   for (const line of lines) {
     const trimmed = line.trim();
@@ -662,7 +726,6 @@ export function syncTasksFromAIResponse(
       const assigneeOrTat = cells[3] || "";
       const tatOrUrgency = cells[4] || "";
 
-      // Check if row contains a recognizable SOP or task
       const sopMatch = (codeOrTitle + " " + titleOrAspect).match(/SOP-([A-Z]{3})-\d+/i);
       const isLegal = /legal|t&c|consent/i.test(trimmed);
       const isComp = /comp|dlt|trai|uat/i.test(trimmed);
@@ -676,30 +739,27 @@ export function syncTasksFromAIResponse(
                  (sopMatch && t.sopCode.toLowerCase() === sopMatch[0].toLowerCase())
         );
 
-        const member = findTeamMember(trimmed) || (
-          aspect === "legal"
-            ? BIGCITY_TEAM[0]
-            : aspect === "compliance"
-            ? BIGCITY_TEAM[3]
-            : aspect === "accounting"
-            ? BIGCITY_TEAM[5]
-            : BIGCITY_TEAM[4]
-        );
+        const member = findTeamMember(trimmed);
 
         if (existingIdx >= 0) {
-          // Update existing task if assignee or TAT is specified
-          const current = tasks[existingIdx];
-          const hasNewAssignee = member && member.name !== current.assignee && trimmed.includes(member.name.split(" ")[0]);
-          if (hasNewAssignee) {
+          if (member && member.name !== tasks[existingIdx].assignee && trimmed.includes(member.name.split(" ")[0])) {
             tasks[existingIdx] = {
-              ...current,
+              ...tasks[existingIdx],
               assignee: member.name,
               role: member.role,
             };
-            modifiedIds.push(current.id);
+            modifiedIds.push(tasks[existingIdx].id);
           }
         } else {
-          // Insert newly generated task
+          const fallbackMember = member || (
+            aspect === "legal"
+              ? BIGCITY_TEAM[0]
+              : aspect === "compliance"
+              ? BIGCITY_TEAM[4]
+              : aspect === "accounting"
+              ? BIGCITY_TEAM[6]
+              : BIGCITY_TEAM[5]
+          );
           const sopCode = sopMatch ? sopMatch[0].toUpperCase() : `SOP-${aspect.slice(0, 3).toUpperCase()}-0${tasks.filter((t) => t.aspect === aspect).length + 1}`;
           const newId = `task-ai-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
           const newTask: AspectTask = {
@@ -707,15 +767,15 @@ export function syncTasksFromAIResponse(
             sopCode,
             title: title.slice(0, 65),
             aspect,
-            assignee: member.name,
-            role: member.role,
+            assignee: fallbackMember.name,
+            role: fallbackMember.role,
             urgency: /highest|critical|urgent/i.test(trimmed) ? "HIGHEST" : /medium/i.test(trimmed) ? "MEDIUM" : "HIGH",
             tat: /1\s*day|24h/i.test(trimmed) ? "1 Day" : /3\s*day/i.test(trimmed) ? "3 Days" : "2 Days",
             status: "PENDING_APPROVAL",
             zohoTaskId: `ZP-T-${Math.floor(100000 + Math.random() * 900000)}`,
             zohoTaskStatus: "Open",
             details: trimmed,
-            verificationRequirement: `${member.role} sign-off required prior to Go-Live`,
+            verificationRequirement: `${fallbackMember.role} sign-off required prior to Go-Live`,
             mandatoryGate: true,
           };
           tasks.push(newTask);

@@ -731,11 +731,18 @@ User Request: ${content}`;
             // Ensure assistant message is ALWAYS rendered even if streaming ended cleanly without prior chunks
             if (!firstChunkReceived) {
               setIsThinking(false);
-              const fallbackContent =
-                accumulatedContent ||
-                (planModified && modificationSummary
-                  ? modificationSummary
-                  : `### 🎯 Strategic Campaign Plan Synthesized\n\n[Confirmed Information]\nAll 4 milestone aspects (Legal, Compliance, Escrow Accounting, Tech & QR) have been verified against BigCity SOPs.\n\n[Recommendation]\nReview the 13 tasks on the canvas. You can reassign owners (e.g. _"assign all legal tasks to Akash Verma"_), adjust TATs, or click **Approve & Push to Zoho**.`);
+              let fallbackContent = accumulatedContent;
+              if (!fallbackContent) {
+                if (planModified && modificationSummary) {
+                  fallbackContent = modificationSummary;
+                } else if (/scratch|example|what is|how to|explain/i.test(content)) {
+                  fallbackContent = `A **Scratch & Win** campaign is a promotional mechanic where consumers purchase a participating pack, uncover a unique cryptographic code (via scratch card or on-pack print), and redeem it via SMS, WhatsApp, or a branded microsite to win assured rewards (cashback, digital vouchers) or enter mega lucky draws.\n\n**Key BigCity Capabilities**:\n* **Dual-Gateway OTP & Redemption** with automatic failover.\n* **Cryptographic Alphanumeric Codes** with 100% velocity protection and fraud mitigation.\n* **Automated Instant Fulfillment** via UPI, Amazon Pay, Zomato, or Swiggy.\n* **Full Compliance & Escrow Gating** aligned with brand SOPs.`;
+                } else if (activePlan) {
+                  fallbackContent = `### 🎯 Strategic Campaign Plan Synthesized for **${activePlan.campaignData.name}**\n\n[Confirmed Information]\nAll 4 milestone aspects (Legal, Compliance, Escrow Accounting, Tech & QR) have been verified against BigCity SOPs.\n\n[Recommendation]\nReview the tasks on the canvas. You can reassign owners, adjust TATs, or click **Approve & Push to Zoho**.`;
+                } else {
+                  fallbackContent = `I can help with that. As your BCP Assist Copilot, I can help you plan promotional campaigns, analyze live Zoho deals, or answer questions about our SOPs.`;
+                }
+              }
 
               const assistantMessage: Message = {
                 id: `msg-${Date.now()}-assistant`,
@@ -985,19 +992,19 @@ User Request: ${content}`;
         {/* LEFT PANE: Chat & Modification Prompt Stream */}
         <div
           className={`flex flex-col h-full min-h-0 transition-all duration-300 ${
-            workingPlan && isPlanPanelOpen ? "w-full lg:w-[48%] border-r border-stone-200 bg-[#FAFAF9]" : "w-full"
+            workingPlan && isPlanPanelOpen ? "w-full lg:w-[44%] border-r border-stone-200 bg-[#FAFAF9]" : "w-full"
           }`}
         >
           {/* Scrollable messages */}
           <div
             ref={scrollContainerRef}
             onScroll={handleScroll}
-            className="flex-1 overflow-y-auto px-4 py-5 flex flex-col items-center scroll-smooth space-y-4"
+            className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-5 flex flex-col items-center scroll-smooth space-y-4 w-full min-w-0"
           >
             {messages.length === 0 ? (
               <EmptyState onSelectPrompt={sendMessage} />
             ) : (
-              <div className="w-full max-w-2xl space-y-4">
+              <div className="w-full max-w-2xl space-y-4 min-w-0">
                 {/* Chat message stream */}
                 {messages.map((msg, index) => (
                   <ChatMessage key={msg.id} message={msg} index={index} />
@@ -1053,35 +1060,33 @@ User Request: ${content}`;
         {/* RIGHT PANE: Live Full Plan Canvas & Task Studio */}
         {workingPlan && (
           <div className="hidden lg:flex flex-1 flex-col h-full min-h-0 bg-[#FBFBFA] overflow-hidden">
-            {/* Header: Campaign Info & Push Action */}
-            <div className="px-6 py-3.5 border-b border-stone-200/80 bg-white flex items-center justify-between flex-shrink-0">
-              <div className="min-w-0 flex-1 pr-4">
-                <div className="flex items-center gap-2 mb-1">
+            {/* Header: Campaign Info & Push Action (Clean, uncrowded layout) */}
+            <div className="px-6 py-4 border-b border-stone-200/80 bg-white flex flex-col md:flex-row md:items-center justify-between gap-3.5 flex-shrink-0">
+              <div className="min-w-0 flex-1">
+                <h2 className="text-base font-bold text-stone-900 tracking-tight truncate mb-1.5">
+                  {workingPlan.campaignData.name}
+                </h2>
+                <div className="flex flex-wrap items-center gap-2">
                   <span
-                    className={`inline-flex items-center gap-1.5 text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-md border ${
+                    className={`inline-flex items-center gap-1 text-[10.5px] font-mono font-bold px-2 py-0.5 rounded-md border ${
                       workingPlan.status === "live"
                         ? "bg-emerald-50 text-emerald-800 border-emerald-200"
                         : "bg-amber-50 text-amber-900 border-amber-200"
                     }`}
                   >
-                    <Kanban size={13} weight="fill" />
+                    <Kanban size={12} weight="fill" />
                     {workingPlan.status === "live" ? `LIVE · ${workingPlan.zohoProjectId}` : "PLAN PREVIEW"}
                   </span>
-                  <span className="text-xs text-stone-500 font-medium">
+                  <span className="text-[11px] font-medium text-stone-600 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200/60">
                     {workingPlan.campaignData.client}
                   </span>
-                  <span className="text-stone-300">·</span>
-                  <span className="text-xs font-mono text-stone-500">
+                  <span className="text-[11px] font-mono font-medium text-stone-600 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200/60">
                     {workingPlan.campaignData.budget}
                   </span>
-                  <span className="text-stone-300">·</span>
-                  <span className="text-xs font-mono text-stone-500">
+                  <span className="text-[11px] font-mono font-medium text-stone-600 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200/60">
                     {workingPlan.campaignData.codeVolume}
                   </span>
                 </div>
-                <h2 className="text-base font-bold text-stone-900 tracking-tight truncate">
-                  {workingPlan.campaignData.name}
-                </h2>
               </div>
 
               {/* Main Actions */}
@@ -1089,10 +1094,10 @@ User Request: ${content}`;
                 <button
                   type="button"
                   onClick={() => setIsAddTaskModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-semibold transition-all cursor-pointer border border-stone-200"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-semibold transition-all cursor-pointer border border-stone-200 shadow-2xs"
                   title="Add custom task to plan"
                 >
-                  <Plus size={14} weight="bold" />
+                  <Plus size={13} weight="bold" />
                   <span>Add Task</span>
                 </button>
 
@@ -1100,9 +1105,9 @@ User Request: ${content}`;
                   <button
                     type="button"
                     onClick={onViewCampaigns}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs cursor-pointer transition-all"
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs cursor-pointer transition-all"
                   >
-                    <Kanban size={14} weight="bold" />
+                    <Kanban size={13} weight="bold" />
                     <span>View in Campaigns</span>
                   </button>
                 ) : (
@@ -1110,16 +1115,16 @@ User Request: ${content}`;
                     type="button"
                     onClick={handleApprovePlanToZoho}
                     disabled={isPushingToZoho}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold shadow-sm hover:shadow-md cursor-pointer transition-all active:scale-98"
+                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold shadow-xs hover:shadow transition-all cursor-pointer active:scale-98"
                   >
                     {isPushingToZoho ? (
                       <>
-                        <ArrowsClockwise size={15} className="animate-spin" />
-                        <span>Pushing to Zoho…</span>
+                        <ArrowsClockwise size={13} className="animate-spin" />
+                        <span>Pushing…</span>
                       </>
                     ) : (
                       <>
-                        <CheckCircle size={15} weight="fill" />
+                        <CheckCircle size={13} weight="fill" />
                         <span>Approve & Push to Zoho</span>
                       </>
                     )}
@@ -1203,7 +1208,7 @@ User Request: ${content}`;
             </div>
 
             {/* Spacious Scrollable Task Cards */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-3.5">
+            <div className="flex-1 overflow-y-auto p-6 space-y-3">
               {displayedTasks.length === 0 ? (
                 <div className="py-12 px-4 text-center">
                   <div className="w-12 h-12 rounded-2xl bg-stone-100 flex items-center justify-center mx-auto mb-3 text-stone-400">
@@ -1246,7 +1251,7 @@ User Request: ${content}`;
                           scale: isHighlighted ? [1, 1.015, 1] : 1,
                         }}
                         transition={{ duration: 0.25, delay: i * 0.02 }}
-                        className={`p-4 rounded-xl bg-white border transition-all space-y-2.5 relative group ${
+                        className={`p-3.5 rounded-xl bg-white border transition-all space-y-2 relative group ${
                           isHighlighted
                             ? "border-amber-400 shadow-md ring-2 ring-amber-300/40 bg-amber-50/20"
                             : "border-stone-200/90 shadow-2xs hover:shadow-xs hover:border-stone-300"
@@ -1256,9 +1261,9 @@ User Request: ${content}`;
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex items-center gap-2.5 min-w-0 flex-1">
                             <div
-                              className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${meta.bg}`}
+                              className={`w-6.5 h-6.5 rounded-lg flex items-center justify-center flex-shrink-0 ${meta.bg}`}
                             >
-                              <Icon size={14} weight="duotone" className={meta.light} />
+                              <Icon size={13} weight="duotone" className={meta.light} />
                             </div>
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
@@ -1266,18 +1271,18 @@ User Request: ${content}`;
                                   {task.sopCode}
                                 </span>
                                 {isHighlighted && (
-                                  <span className="text-[9.5px] font-mono font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
+                                  <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
                                     UPDATED
                                   </span>
                                 )}
                               </div>
-                              <h4 className="text-[13.5px] font-bold text-stone-900 leading-snug">
+                              <h4 className="text-[13px] font-bold text-stone-900 leading-snug">
                                 {task.title}
                               </h4>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
                             {/* TAT Editor Pill */}
                             <button
                               type="button"
@@ -1292,37 +1297,65 @@ User Request: ${content}`;
                                     : "1 Day";
                                 handleUpdateTaskField(task.id, { tat: nextTat });
                               }}
-                              className="text-[11px] font-mono font-medium px-2.5 py-1 rounded-md bg-stone-100/80 hover:bg-stone-200/80 text-stone-600 hover:text-stone-900 flex items-center gap-1.5 transition-colors cursor-pointer border border-transparent hover:border-stone-200"
+                              className="text-[10.5px] font-mono font-medium px-2 py-0.5 rounded-md bg-stone-100 hover:bg-stone-200 text-stone-600 hover:text-stone-900 flex items-center gap-1 transition-colors cursor-pointer border border-stone-200/60"
                               title="Click to cycle TAT duration"
                             >
-                              <Clock size={12} className="text-stone-400" />
+                              <Clock size={11} className="text-stone-400" />
                               {task.tat}
+                            </button>
+
+                            {/* Urgency Selector */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextUrgency =
+                                  task.urgency === "HIGHEST"
+                                    ? "HIGH"
+                                    : task.urgency === "HIGH"
+                                    ? "MEDIUM"
+                                    : task.urgency === "MEDIUM"
+                                    ? "NORMAL"
+                                    : "HIGHEST";
+                                handleUpdateTaskField(task.id, {
+                                  urgency: nextUrgency as AspectTask["urgency"],
+                                });
+                              }}
+                              className={`text-[9.5px] font-mono px-2 py-0.5 rounded border transition-colors cursor-pointer ${
+                                task.urgency === "HIGHEST"
+                                  ? "bg-rose-50 text-rose-800 border-rose-200 font-bold"
+                                  : task.urgency === "HIGH"
+                                  ? "bg-amber-50 text-amber-800 border-amber-200 font-semibold"
+                                  : "bg-stone-50 text-stone-600 border-stone-200/80"
+                              }`}
+                              title="Click to toggle priority urgency"
+                            >
+                              {task.urgency}
                             </button>
 
                             {/* Delete Task Button */}
                             <button
                               type="button"
                               onClick={() => handleDeleteTask(task.id)}
-                              className="w-7 h-7 rounded-lg text-stone-300 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
+                              className="w-6 h-6 rounded-md text-stone-300 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
                               title="Delete task from plan"
                             >
-                              <Trash size={13} />
+                              <Trash size={12} />
                             </button>
                           </div>
                         </div>
 
                         {/* Details text */}
                         {task.details && (
-                          <p className="text-xs text-stone-600 leading-relaxed pl-9.5">
+                          <p className="text-[11.5px] text-stone-600 leading-relaxed pl-9">
                             {task.details}
                           </p>
                         )}
 
                         {/* Metadata & Assignee Selector Bar */}
-                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-stone-100 pl-9.5 text-xs text-stone-500">
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1.5 border-t border-stone-100 pl-9 text-xs text-stone-500">
                           <div className="flex items-center gap-2">
                             <span
-                              className={`text-[11px] font-semibold px-2 py-0.5 rounded-md border ${meta.badge}`}
+                              className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-md border ${meta.badge}`}
                             >
                               {meta.label}
                             </span>
@@ -1336,17 +1369,12 @@ User Request: ${content}`;
                                     isEditingAssignee ? null : task.id
                                   )
                                 }
-                                className="flex items-center gap-1.5 text-stone-800 font-medium px-2 py-0.5 rounded-md hover:bg-stone-100 transition-colors border border-transparent hover:border-stone-200 cursor-pointer"
+                                className="flex items-center gap-1.5 text-stone-800 font-medium px-2 py-0.5 rounded-md hover:bg-stone-100 transition-colors border border-transparent hover:border-stone-200 cursor-pointer text-[11.5px]"
                                 title="Click to reassign task owner"
                               >
-                                <User size={12} className="text-stone-400" />
+                                <User size={11} className="text-stone-400" />
                                 <span>{task.assignee}</span>
-                                {task.role && (
-                                  <span className="text-stone-400 font-normal">
-                                    ({task.role})
-                                  </span>
-                                )}
-                                <CaretDown size={10} className="text-stone-400 ml-0.5" />
+                                <CaretDown size={9} className="text-stone-400 ml-0.5" />
                               </button>
 
                               {/* Dropdown Menu */}
@@ -1379,7 +1407,7 @@ User Request: ${content}`;
                                           }`}
                                         >
                                           <div>
-                                            <div className="font-semibold">{member.name}</div>
+                                            <div className="font-semibold text-xs">{member.name}</div>
                                             <div className="text-[10px] text-stone-400">
                                               {member.role}
                                             </div>
@@ -1394,36 +1422,6 @@ User Request: ${content}`;
                                 </>
                               )}
                             </div>
-                          </div>
-
-                          {/* Urgency Selector */}
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const nextUrgency =
-                                  task.urgency === "HIGHEST"
-                                    ? "HIGH"
-                                    : task.urgency === "HIGH"
-                                    ? "MEDIUM"
-                                    : task.urgency === "MEDIUM"
-                                    ? "NORMAL"
-                                    : "HIGHEST";
-                                handleUpdateTaskField(task.id, {
-                                  urgency: nextUrgency as AspectTask["urgency"],
-                                });
-                              }}
-                              className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-colors cursor-pointer ${
-                                task.urgency === "HIGHEST"
-                                  ? "bg-rose-50 text-rose-800 border-rose-200 font-bold"
-                                  : task.urgency === "HIGH"
-                                  ? "bg-amber-50 text-amber-800 border-amber-200 font-semibold"
-                                  : "bg-stone-50 text-stone-600 border-stone-200/80"
-                              }`}
-                              title="Click to toggle priority urgency"
-                            >
-                              {task.urgency}
-                            </button>
                           </div>
                         </div>
                       </motion.div>

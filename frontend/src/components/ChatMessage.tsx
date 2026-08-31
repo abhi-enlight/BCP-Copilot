@@ -108,32 +108,50 @@ export default function ChatMessage({ message, index }: ChatMessageProps) {
 
           {/* Message Card */}
           <div
-            className={`relative px-5 py-4 text-[0.93rem] leading-relaxed transition-all ${
+            className={`relative px-4.5 py-3.5 text-[0.92rem] leading-relaxed transition-all break-words max-w-full overflow-hidden ${
               isUser
                 ? "bg-slate-900 text-white rounded-2xl rounded-tr-sm shadow-md"
                 : "bg-white border border-slate-200/90 rounded-2xl rounded-tl-sm shadow-[0_2px_12px_-2px_rgba(15,23,42,0.06)]"
             }`}
           >
             {isUser ? (
-              <p className="whitespace-pre-wrap font-normal text-slate-100">{message.content}</p>
+              <p className="whitespace-pre-wrap font-normal text-slate-100 break-words">{message.content}</p>
             ) : (
-              <div className="chat-content text-slate-800">
+              <div className="chat-content text-slate-800 break-words max-w-full overflow-hidden">
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
                   components={{
                     p: ({ children }) => {
                       const text = parseTextContent(children);
+                      const cleanText = text
+                        .replace(/\[Confirmed Information\]/gi, "")
+                        .replace(/\[Historical Precedent\]/gi, "")
+                        .replace(/\[Risk\]/gi, "")
+                        .replace(/\[Recommendation\]/gi, "")
+                        .replace(/\[PENDING_HUMAN_SIGN_OFF\]/gi, "")
+                        .trim();
+
+                      // If the paragraph was just the tag alone, skip rendering duplicate empty container
+                      if (!cleanText && (
+                        text.includes("[Confirmed Information]") ||
+                        text.includes("[Historical Precedent]") ||
+                        text.includes("[Risk]") ||
+                        text.includes("[Recommendation]") ||
+                        text.includes("[PENDING_HUMAN_SIGN_OFF]")
+                      )) {
+                        return null;
+                      }
 
                       // Confirmed Information Block
                       if (text.includes("[Confirmed Information]")) {
                         return (
-                          <div className="my-3 p-3.5 rounded-xl bg-indigo-50/80 border border-indigo-200 shadow-xs">
-                            <div className="flex items-center gap-1.5 text-indigo-900 font-semibold text-xs mb-1.5 uppercase tracking-wide">
-                              <BookmarkSimple size={14} weight="bold" className="text-indigo-600" />
+                          <div className="my-2.5 p-3 rounded-xl bg-indigo-50/70 border border-indigo-200/80 shadow-2xs">
+                            <div className="flex items-center gap-1.5 text-indigo-900 font-semibold text-[11px] mb-1 uppercase tracking-wider">
+                              <BookmarkSimple size={13} weight="bold" className="text-indigo-600" />
                               <span>Confirmed Information</span>
                             </div>
-                            <div className="text-[13.5px] text-slate-800 leading-relaxed font-normal">
-                              {children}
+                            <div className="text-[13px] text-slate-700 leading-relaxed font-normal">
+                              {cleanText || children}
                             </div>
                           </div>
                         );
@@ -142,13 +160,13 @@ export default function ChatMessage({ message, index }: ChatMessageProps) {
                       // Historical Precedent Block
                       if (text.includes("[Historical Precedent]")) {
                         return (
-                          <div className="my-3 p-3.5 rounded-xl bg-sky-50/80 border border-sky-200 shadow-xs">
-                            <div className="flex items-center gap-1.5 text-sky-900 font-semibold text-xs mb-1.5 uppercase tracking-wide">
-                              <Sparkle size={14} weight="bold" className="text-sky-600" />
-                              <span>Historical Precedent (Supabase RAG)</span>
+                          <div className="my-2.5 p-3 rounded-xl bg-sky-50/70 border border-sky-200/80 shadow-2xs">
+                            <div className="flex items-center gap-1.5 text-sky-900 font-semibold text-[11px] mb-1 uppercase tracking-wider">
+                              <Sparkle size={13} weight="bold" className="text-sky-600" />
+                              <span>Historical Precedent (Knowledge Base)</span>
                             </div>
-                            <div className="text-[13.5px] text-slate-800 leading-relaxed font-normal">
-                              {children}
+                            <div className="text-[13px] text-slate-700 leading-relaxed font-normal">
+                              {cleanText || children}
                             </div>
                           </div>
                         );
@@ -157,13 +175,13 @@ export default function ChatMessage({ message, index }: ChatMessageProps) {
                       // Risk Alert Block
                       if (text.includes("[Risk]")) {
                         return (
-                          <div className="my-3 p-3.5 rounded-xl bg-amber-50/80 border border-amber-200 shadow-xs">
-                            <div className="flex items-center gap-1.5 text-amber-900 font-semibold text-xs mb-1.5 uppercase tracking-wide">
-                              <WarningCircle size={14} weight="bold" className="text-amber-600" />
+                          <div className="my-2.5 p-3 rounded-xl bg-amber-50/70 border border-amber-200/80 shadow-2xs">
+                            <div className="flex items-center gap-1.5 text-amber-900 font-semibold text-[11px] mb-1 uppercase tracking-wider">
+                              <WarningCircle size={13} weight="bold" className="text-amber-600" />
                               <span>Campaign Risk Alert</span>
                             </div>
-                            <div className="text-[13.5px] text-slate-800 leading-relaxed font-normal">
-                              {children}
+                            <div className="text-[13px] text-slate-700 leading-relaxed font-normal">
+                              {cleanText || children}
                             </div>
                           </div>
                         );
@@ -172,13 +190,13 @@ export default function ChatMessage({ message, index }: ChatMessageProps) {
                       // Recommendation Block
                       if (text.includes("[Recommendation]")) {
                         return (
-                          <div className="my-3 p-3.5 rounded-xl bg-emerald-50/80 border border-emerald-200 shadow-xs">
-                            <div className="flex items-center gap-1.5 text-emerald-900 font-semibold text-xs mb-1.5 uppercase tracking-wide">
-                              <Check size={14} weight="bold" className="text-emerald-600" />
+                          <div className="my-2.5 p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/80 shadow-2xs">
+                            <div className="flex items-center gap-1.5 text-emerald-900 font-semibold text-[11px] mb-1 uppercase tracking-wider">
+                              <Check size={13} weight="bold" className="text-emerald-600" />
                               <span>Recommendation</span>
                             </div>
-                            <div className="text-[13.5px] text-slate-800 leading-relaxed font-normal">
-                              {children}
+                            <div className="text-[13px] text-slate-700 leading-relaxed font-normal">
+                              {cleanText || children}
                             </div>
                           </div>
                         );
@@ -187,13 +205,13 @@ export default function ChatMessage({ message, index }: ChatMessageProps) {
                       // Human Sign-off Policy Guard Block
                       if (text.includes("[PENDING_HUMAN_SIGN_OFF]")) {
                         return (
-                          <div className="my-3 p-3.5 rounded-xl bg-rose-50/80 border border-rose-200 shadow-xs">
-                            <div className="flex items-center gap-1.5 text-rose-900 font-semibold text-xs mb-1.5 uppercase tracking-wide">
-                              <ShieldWarning size={14} weight="bold" className="text-rose-600" />
+                          <div className="my-2.5 p-3 rounded-xl bg-rose-50/70 border border-rose-200/80 shadow-2xs">
+                            <div className="flex items-center gap-1.5 text-rose-900 font-semibold text-[11px] mb-1 uppercase tracking-wider">
+                              <ShieldWarning size={13} weight="bold" className="text-rose-600" />
                               <span>SOW Policy Guard: Human Sign-Off Required</span>
                             </div>
-                            <div className="text-[13.5px] text-slate-800 leading-relaxed font-normal">
-                              {children}
+                            <div className="text-[13px] text-slate-700 leading-relaxed font-normal">
+                              {cleanText || children}
                             </div>
                           </div>
                         );
