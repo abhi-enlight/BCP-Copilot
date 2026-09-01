@@ -16,6 +16,8 @@ import {
 interface ThinkingProcessProps {
   elapsedTime?: number;
   mode?: "plan" | "chat";
+  /** Live tool-call label forwarded from n8n begin frames (e.g. "Querying Zoho CRM invoices...") */
+  toolCallLabel?: string;
 }
 
 const PLAN_THINKING_STEPS = [
@@ -78,11 +80,15 @@ const CHAT_THINKING_STEPS = [
   },
 ];
 
-export default function ThinkingProcess({ elapsedTime = 0, mode = "plan" }: ThinkingProcessProps) {
+export default function ThinkingProcess({ elapsedTime = 0, mode = "plan", toolCallLabel }: ThinkingProcessProps) {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isExpanded, setIsExpanded] = useState(true);
   const [seconds, setSeconds] = useState(elapsedTime);
   const steps = mode === "plan" ? PLAN_THINKING_STEPS : CHAT_THINKING_STEPS;
+
+  // When a live tool-call label arrives, freeze step advancement
+  // and display the label at the current step position.
+  const activeLabel = toolCallLabel ?? null;
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -92,11 +98,13 @@ export default function ThinkingProcess({ elapsedTime = 0, mode = "plan" }: Thin
   }, []);
 
   useEffect(() => {
+    // Pause step cycling while a live tool-call label is being shown
+    if (activeLabel) return;
     const stepInterval = setInterval(() => {
       setCurrentStepIndex((prev) => (prev < steps.length - 1 ? prev + 1 : prev));
     }, 1200);
     return () => clearInterval(stepInterval);
-  }, [steps.length]);
+  }, [steps.length, activeLabel]);
 
   const currentStep = steps[currentStepIndex] || steps[0];
 
@@ -119,7 +127,9 @@ export default function ThinkingProcess({ elapsedTime = 0, mode = "plan" }: Thin
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[13px] font-semibold tracking-tight text-slate-900">
-                {mode === "plan" ? "Thinking & Processing Brief" : "Processing Query"}
+                {activeLabel
+                  ? activeLabel
+                  : mode === "plan" ? "Thinking & Processing Brief" : "Processing Query"}
               </span>
               <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200/80 tabular-nums font-medium">
                 {seconds.toFixed(1)}s
@@ -219,7 +229,7 @@ export default function ThinkingProcess({ elapsedTime = 0, mode = "plan" }: Thin
                         )}
                       </div>
                       <p className="text-[11.5px] text-slate-500 truncate mt-0.5">
-                        {step.desc}
+                        {isCurrent && activeLabel ? activeLabel : step.desc}
                       </p>
                     </div>
                   </motion.div>

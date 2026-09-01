@@ -1,6 +1,6 @@
 # 🤖 BCP Assist: AI Campaign Expert & Client Success Copilot
 
-An enterprise AI execution layer and campaign copilot built with **Next.js 16**, **n8n Orchestrator**, **Google Gemini 2.5 Flash**, **Supabase pgvector**, and **Zoho CRM Suite**.
+An enterprise AI execution layer and campaign copilot built with **Next.js 16**, **n8n Orchestrator**, **Google Gemini 3.7 Flash**, **Supabase pgvector**, and **Zoho CRM Suite**.
 
 Designed specifically for **BigCity Promotions** to eliminate manual communication overhead, enforce Standard Operating Procedure (SOP) compliance, proactively flag campaign risks, and automate deal/task synchronization.
 
@@ -24,7 +24,7 @@ flowchart TD
     end
 
     subgraph Intelligence["🧠 AI Reasoning & Memory"]
-        LLM["🤖 Google Gemini 2.5 Flash\n(0.3 Temperature)"]
+        LLM["🤖 Google Gemini 3.7 Flash\n(0.3 Temperature)"]
         VEC["🗄️ Supabase pgvector\n(34 BigCity SOP Embeddings)"]
     end
 

@@ -51,7 +51,7 @@ export default function Sidebar({
       id: "connections" as NavView,
       label: "Connections",
       icon: PlugsConnected,
-      badge: "5",
+      badge: "4",
     },
     {
       id: "users" as NavView,

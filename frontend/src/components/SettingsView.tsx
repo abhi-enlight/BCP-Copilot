@@ -147,7 +147,7 @@ export default function SettingsView() {
                 </div>
               </div>
               <div>
-                <label className={labelClass}>n8n Webhook Endpoint</label>
+                <label className={labelClass}>Workflow Webhook Endpoint</label>
                 <input type="text" value={settings.n8nWebhookUrl} onChange={(e) => setSettings({ ...settings, n8nWebhookUrl: e.target.value })} className={`${inputClass} font-mono text-stone-700`} />
               </div>
             </div>

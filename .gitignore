@@ -21,3 +21,6 @@ shared_data/
 .system_generated/
 .tempmediaStorage/
 .user_uploaded/
+
+workflows
+DEMO_SCRIPT.md

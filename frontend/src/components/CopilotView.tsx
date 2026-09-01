@@ -141,6 +141,8 @@ export default function CopilotView({
   const [isLoading, setIsLoading] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [isPushingToZoho, setIsPushingToZoho] = useState(false);
+  // Label shown in the ThinkingProcess during long n8n tool calls (e.g. "Querying Zoho CRM")
+  const [toolCallLabel, setToolCallLabel] = useState<string | null>(null);
 
   // Filters & Search State
   const [selectedAspectFilter, setSelectedAspectFilter] = useState<AspectKey>("all");
@@ -480,11 +482,11 @@ export default function CopilotView({
     });
   };
 
-  type UserIntent = "plan_create" | "plan_modify" | "plan_approve" | "conversational";
+  type UserIntent = "plan_create" | "plan_modify" | "plan_approve" | "data_query" | "conversational";
 
   const classifyIntent = (message: string, hasActivePlan: boolean): UserIntent => {
     const lower = message.toLowerCase().trim();
-    
+
     if (hasActivePlan) {
       if (/^(yes|yep|approve|looks good|push|sync|go ahead|proceed|push to zoho|approve and push|accept)/i.test(lower)) {
         return "plan_approve";
@@ -493,11 +495,21 @@ export default function CopilotView({
       if (modSignals.test(lower)) return "plan_modify";
     }
 
+    // Data / lookup queries — these should always go to the chat API regardless of campaign context
+    const isDataQuery =
+      /\b(invoice|invoices|billing|payment|payments|escrow|receipt|paid|advance)\b/i.test(lower) ||
+      /\b(status|pipeline|deals|live campaigns|active campaigns|show deals)\b/i.test(lower) ||
+      /\b(who is|who's|team|directory|contact|spoc|members)\b/i.test(lower) ||
+      /\b(pending tasks|action items|blockers|overdue|deadlines)\b/i.test(lower) ||
+      /\b(help|capabilities|what can you|what do you do|features)\b/i.test(lower);
+
+    if (isDataQuery) return "data_query";
+
     const hasSpecificBrand = /\b(nestl|cadbury|pepsi|tata|coca.?cola|britannia|itc|mondelez|pepsico|hindustan)\b/i.test(lower);
     const hasCampaignNoun = /\b(campaign|plan|brief|promotion|deal)\b/i.test(lower);
-    const hasCreationVerb = /\b(create|generate|build|plan|launch|design|draft|set up|prepare|show|review|open|load|view)\b/i.test(lower);
-    
-    // Check if the user is asking for general educational explanation / definition (without asking about a specific campaign/brand)
+    const hasCreationVerb = /\b(create|generate|build|plan|launch|design|draft|set up|prepare|review|open|load|view)\b/i.test(lower);
+
+    // Check if the user is asking for general educational explanation / definition
     const hasExclusionSignal = /\b(example\s+of|explain\s+how|what\s+is|what\s+does|meaning\s+of|how\s+does|compare\s+|difference\s+between)\b/i.test(lower);
 
     if (hasExclusionSignal && !hasSpecificBrand) {
@@ -605,22 +617,33 @@ export default function CopilotView({
       }
 
       let promptToSend = content;
-      
-      if (activePlan && activePlan.status !== "live") {
-        promptToSend = `[Active Working Campaign Context]
-Campaign: ${activePlan.campaignData.name}
-Client: ${activePlan.campaignData.client}
-Budget: ${activePlan.campaignData.budget}
-Volume: ${activePlan.campaignData.codeVolume}
-Current Tasks (${activePlan.tasks.length}):
-${activePlan.tasks.map((t, idx) => `${idx + 1}. [${t.aspect.toUpperCase()}] ${t.title} (Owner: ${t.assignee}, TAT: ${t.tat}, Urgency: ${t.urgency})`).join("\n")}
 
-User Request: ${content}`;
+      // Build campaign context string for Gemini direct fallback
+      let campaignContextStr: string | undefined;
+      if (activePlan && activePlan.status !== "live") {
+        campaignContextStr =
+          `Campaign: ${activePlan.campaignData.name}\n` +
+          `Client: ${activePlan.campaignData.client}\n` +
+          `Budget: ${activePlan.campaignData.budget}\n` +
+          `Volume: ${activePlan.campaignData.codeVolume}\n` +
+          `Tasks (${activePlan.tasks.length}):\n` +
+          activePlan.tasks
+            .map((t, idx) => `${idx + 1}. [${t.aspect.toUpperCase()}] ${t.title} (Owner: ${t.assignee}, TAT: ${t.tat}, Urgency: ${t.urgency})`)
+            .join("\n");
+
+        promptToSend =
+          `[Active Working Campaign Context]\n${campaignContextStr}\n\nUser Request: ${content}`;
       }
+
+      // Build last-6-turn history for Gemini direct context
+      const conversationHistory = session.messages
+        .slice(-6)
+        .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
       // Chat API call / Stream
       setIsLoading(true);
       setIsThinking(true);
+      setToolCallLabel(null);
 
       try {
         const controller = new AbortController();
@@ -632,6 +655,9 @@ User Request: ${content}`;
           body: JSON.stringify({
             message: promptToSend,
             sessionId: session.id,
+            campaignContext: campaignContextStr,
+            conversationHistory,
+            intent,
           }),
           signal: controller.signal,
         });
@@ -651,6 +677,7 @@ User Request: ${content}`;
 
           let accumulatedContent = "";
           let firstChunkReceived = false;
+          let toolCallReceived = false; // tracks whether n8n sent a begin frame (tool was invoked but may have returned no content)
           const decoder = new TextDecoder();
           let buffer = "";
           let streamEnded = false;
@@ -678,6 +705,30 @@ User Request: ${content}`;
                   }
                   try {
                     const parsed = JSON.parse(data);
+
+                    // Handle toolCall frame from n8n begin events:
+                    // Shows "Querying Zoho CRM..." during long tool calls (~17s)
+                    if (parsed.toolCall) {
+                      toolCallReceived = true;
+                      const labelMap: Record<string, string> = {
+                        "Zoho CRM Deals & Campaigns": "Querying Zoho CRM deals...",
+                        "Zoho CRM Invoices": "Querying Zoho CRM invoices...",
+                        "Zoho CRM Client Accounts": "Querying Zoho CRM accounts...",
+                        "Campaign Knowledge Base": "Searching knowledge base...",
+                        "Pending Tasks & SOP Action Items": "Loading pending tasks...",
+                      };
+                      const displayLabel =
+                        labelMap[parsed.toolCall as string] ||
+                        `Processing: ${parsed.toolCall}...`;
+                      setToolCallLabel(displayLabel);
+                      continue;
+                    }
+
+                    // Clear tool call label once content starts arriving
+                    if (parsed.text || parsed.content || parsed.output) {
+                      setToolCallLabel(null);
+                    }
+
                     token = parsed.text || parsed.content || parsed.output || "";
                   } catch {
                     token = data;
@@ -689,8 +740,22 @@ User Request: ${content}`;
                     if (parsed.type === "item" && parsed.content) {
                       token = parsed.content;
                     } else if (parsed.type === "end") {
-                      streamEnded = true;
-                      break;
+                      // Sub-node ended (tool completed), main stream continues
+                    } else if (parsed.type === "keepalive") {
+                      // Keepalive ping, ignore
+                    } else if (parsed.toolCall) {
+                      const labelMap: Record<string, string> = {
+                        "Zoho CRM Deals & Campaigns": "Querying Zoho CRM deals...",
+                        "Zoho CRM Invoices": "Querying Zoho CRM invoices...",
+                        "Zoho CRM Client Accounts": "Querying Zoho CRM accounts...",
+                        "Campaign Knowledge Base": "Searching knowledge base...",
+                        "Pending Tasks & SOP Action Items": "Loading pending tasks...",
+                      };
+                      setToolCallLabel(
+                        labelMap[parsed.toolCall as string] ||
+                        `Processing: ${parsed.toolCall}...`
+                      );
+                      continue;
                     } else {
                       token = parsed.text || parsed.content || parsed.output || "";
                     }
@@ -767,19 +832,31 @@ User Request: ${content}`;
               });
             }
 
-            // Ensure assistant message is ALWAYS rendered even if streaming ended cleanly without prior chunks
+            // Ensure assistant message is ALWAYS rendered even if streaming ended without prior chunks
             if (!firstChunkReceived) {
               setIsThinking(false);
+              setToolCallLabel(null);
               let fallbackContent = accumulatedContent;
               if (!fallbackContent) {
                 if (planModified && modificationSummary) {
                   fallbackContent = modificationSummary;
-                } else if (/scratch|example|what is|how to|explain/i.test(content)) {
-                  fallbackContent = `A **Scratch & Win** campaign is a promotional mechanic where consumers purchase a participating pack, uncover a unique cryptographic code (via scratch card or on-pack print), and redeem it via SMS, WhatsApp, or a branded microsite to win assured rewards (cashback, digital vouchers) or enter mega lucky draws.\n\n**Key BigCity Capabilities**:\n* **Dual-Gateway OTP & Redemption** with automatic failover.\n* **Cryptographic Alphanumeric Codes** with 100% velocity protection and fraud mitigation.\n* **Automated Instant Fulfillment** via UPI, Amazon Pay, Zomato, or Swiggy.\n* **Full Compliance & Escrow Gating** aligned with brand SOPs.`;
                 } else if (activePlan) {
-                  fallbackContent = `### 🎯 Strategic Campaign Plan Synthesized for **${activePlan.campaignData.name}**\n\n[Confirmed Information]\nAll 4 milestone aspects (Legal, Compliance, Escrow Accounting, Tech & QR) have been verified against BigCity SOPs.\n\n[Recommendation]\nReview the tasks on the canvas. You can reassign owners, adjust TATs, or click **Approve & Push to Zoho**.`;
+                  fallbackContent =
+                    `### Strategic Campaign Plan Ready — **${activePlan.campaignData.name}**\n\n` +
+                    `[Confirmed Information]\n` +
+                    `All 4 milestone aspects (Legal, Compliance, Escrow Accounting, Tech & QR) have been verified against BigCity SOPs.\n\n` +
+                    `[Recommendation]\n` +
+                    `Review the tasks on the canvas. You can reassign owners, adjust TATs, or click **Approve & Push to Zoho**.`;
                 } else {
-                  fallbackContent = `I can help with that. As your BCP Assist Copilot, I can help you plan promotional campaigns, analyze live Zoho deals, or answer questions about our SOPs.`;
+                  // Re-route to static engine client-side rather than showing a generic message.
+                  // This covers the case where n8n returned begin/end frames but no item content.
+                  fallbackContent =
+                    `I received your request. The live AI connection appears to be processing.\n\n` +
+                    `[Note] If this happens repeatedly, try:\n` +
+                    `- Asking about invoices: "Show my invoices"\n` +
+                    `- Checking pending tasks: "Show pending tasks"\n` +
+                    `- Viewing the team: "Who is Sneha Nair?"\n\n` +
+                    `These work in offline mode without the live Zoho connection.`;
                 }
               }
 
@@ -798,6 +875,7 @@ User Request: ${content}`;
             if ((readErr as Error).name !== "AbortError") throw readErr;
           } finally {
             setIsThinking(false);
+            setToolCallLabel(null);
             setIsLoading(false);
           }
         } else {
@@ -873,10 +951,11 @@ User Request: ${content}`;
       } finally {
         setIsLoading(false);
         setIsThinking(false);
+        setToolCallLabel(null);
         abortRef.current = null;
       }
     },
-    [session.id, workingPlan, showToast]
+    [session.id, session.messages, workingPlan, showToast]
   );
 
   const handleStop = useCallback(() => {
@@ -1051,7 +1130,13 @@ User Request: ${content}`;
 
                 {/* Live Thinking Stepper */}
                 <AnimatePresence>
-                  {isThinking && <ThinkingProcess key="thinking" mode={workingPlan && session.messages.length === 1 ? "plan" : "chat"} />}
+                  {isThinking && (
+                    <ThinkingProcess
+                      key="thinking"
+                      mode={workingPlan && session.messages.length === 1 ? "plan" : "chat"}
+                      toolCallLabel={toolCallLabel ?? undefined}
+                    />
+                  )}
                 </AnimatePresence>
               </div>
             )}

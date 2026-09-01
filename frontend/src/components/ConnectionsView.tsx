@@ -148,33 +148,6 @@ export default function ConnectionsView() {
         "Inject historical learnings into AI Aspect Decomposition",
       ],
     },
-    {
-      id: "n8n",
-      name: "n8n Orchestrator",
-      category: "Workflow Automation",
-      status: "active",
-      statusLabel: "Active Engine",
-      statusColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
-      readWriteMode: "Orchestration",
-      icon: "https://cdn.simpleicons.org/n8n/EA4B71",
-      iconBg: "bg-rose-50 border-rose-200",
-      iconColor: "text-rose-600",
-      metrics: [
-        { label: "Workflows", value: "4 Active" },
-        { label: "Host", value: "Cloud n8n" },
-        { label: "Port", value: "5678" },
-        { label: "Triggers", value: "Webhooks" },
-      ],
-      endpoint: "https://indigo-pelican-266513.hostingersite.com",
-      authMethod: "MCP Server & Bearer Token",
-      lastPing: "Just now (HTTP 200)",
-      capabilities: [
-        "Event-driven webhook routing and NDJSON chat streaming",
-        "Bi-directional orchestration across Zoho CRM, Projects & Books",
-        "Autonomous Gemini AI aspect decomposition & risk assessment",
-        "Strict policy guardrails and human-in-the-loop interceptor",
-      ],
-    },
   ];
 
   const handlePingAll = () => {

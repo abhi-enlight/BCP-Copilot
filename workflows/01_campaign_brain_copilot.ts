@@ -96,7 +96,7 @@ const zohoCrmDealsTool = tool({
     parameters: {
       resource: 'deal',
       operation: 'getAll',
-      limit: 10
+      limit: 3
     },
     credentials: {
       zohoOAuth2Api: newCredential('Zoho account')
@@ -112,7 +112,7 @@ const zohoCrmInvoicesTool = tool({
     parameters: {
       resource: 'invoice',
       operation: 'getAll',
-      limit: 10
+      limit: 3
     },
     credentials: {
       zohoOAuth2Api: newCredential('Zoho account')
@@ -128,7 +128,7 @@ const zohoCrmAccountsTool = tool({
     parameters: {
       resource: 'account',
       operation: 'getAll',
-      limit: 10
+      limit: 3
     },
     credentials: {
       zohoOAuth2Api: newCredential('Zoho account')
