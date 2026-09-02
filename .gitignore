@@ -22,5 +22,5 @@ shared_data/
 .tempmediaStorage/
 .user_uploaded/
 
-workflows
+workflows/
 DEMO_SCRIPT.md
