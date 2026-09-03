@@ -254,7 +254,7 @@ export default function CopilotView({
               zohoBooksInvoiceId: json.campaign.zohoBooksInvoiceId,
               zohoSyncStatus: json.campaign.zohoSyncStatus,
             });
-            showToast("Campaign already approved & synced to Zoho CRM", "check");
+            showToast("Campaign already approved & synced to Zoho", "check");
             return true;
           }
         }
@@ -284,8 +284,8 @@ export default function CopilotView({
         id: `msg-${Date.now()}-assistant`,
         role: "assistant",
         content: alreadyApproved
-          ? `Campaign **${initialPlanContext.campaignData.name}** is already **Live** and synced to Zoho CRM.\n\n**Client**: ${initialPlanContext.campaignData.client}  \n**Budget**: ${initialPlanContext.campaignData.budget}  \n**Volume**: ${initialPlanContext.campaignData.codeVolume}  \n\nYou can view it in the Campaigns dashboard or ask me any questions.`
-          : `Draft AI Project Plan loaded for **${initialPlanContext.campaignData.name}**\n\n**Client**: ${initialPlanContext.campaignData.client}  \n**Budget**: ${initialPlanContext.campaignData.budget}  \n**Volume**: ${initialPlanContext.campaignData.codeVolume}  \n**Estimated TAT**: 12 Working Days  \n\n### 4-Aspect Breakdown (${initialPlanContext.plan.tasks.length} Total Tasks):\n\n* **Legal** (${legalCount} Tasks): Terms & conditions drafting, partner consent verification, disclaimer compliance.\n* **Compliance** (${compCount} Tasks): DLT / TRAI header whitelisting, regulatory approvals, 72h staging UAT sign-off.\n* **Accounting** (${accCount} Tasks): Advance escrow receipt verification in Zoho Books, GST mapping.\n* **Tech & Operations** (${impCount} Tasks): Cryptographic QR batch generation, CDN provisioning, gateway failover routing.\n\nWhen ready, click **Approve & Sync to Zoho CRM** on the right or reply with **"Approve"**.`,
+          ? `Campaign **${initialPlanContext.campaignData.name}** is already **Live** and synced to Zoho.\n\n**Client**: ${initialPlanContext.campaignData.client}  \n**Budget**: ${initialPlanContext.campaignData.budget}  \n**Volume**: ${initialPlanContext.campaignData.codeVolume}  \n\nYou can view it in the Campaigns dashboard or ask me any questions.`
+          : `Draft AI Project Plan loaded for **${initialPlanContext.campaignData.name}**\n\n**Client**: ${initialPlanContext.campaignData.client}  \n**Budget**: ${initialPlanContext.campaignData.budget}  \n**Volume**: ${initialPlanContext.campaignData.codeVolume}  \n**Estimated TAT**: 12 Working Days  \n\n### 4-Aspect Breakdown (${initialPlanContext.plan.tasks.length} Total Tasks):\n\n* **Legal** (${legalCount} Tasks): Terms & conditions drafting, partner consent verification, disclaimer compliance.\n* **Compliance** (${compCount} Tasks): DLT / TRAI header whitelisting, regulatory approvals, 72h staging UAT sign-off.\n* **Accounting** (${accCount} Tasks): Advance escrow receipt verification in Zoho Books, GST mapping.\n* **Tech & Operations** (${impCount} Tasks): Cryptographic QR batch generation, CDN provisioning, gateway failover routing.\n\nWhen ready, click **Approve & Sync to Zoho** on the right or reply with **"Approve"**.`,
         timestamp: new Date(),
       };
       newSess.messages = [initialGreeting];
@@ -366,17 +366,16 @@ export default function CopilotView({
           id: `msg-${Date.now()}-assistant`,
           role: "assistant",
           content:
-            `**Campaign Approved & Synced**\n\n` +
+            `**Campaign Approved & Synced: ${created.name}**\n\n` +
             `* **Client**: ${created.client}\n` +
             `* **Tasks Saved**: ${workingPlan.tasks.length} tasks across 4 milestone aspects\n\n` +
             `### Zoho Product Sync Status\n\n` +
             `| Product | Purpose | Status | ID |\n` +
             `|---------|---------|--------|----|\n` +
             `| **Zoho CRM** | Campaign Deal (client opportunity & SOW) | ${crmDealId ? "✅ Synced" : "⏳ Pending"} | ${crmDealId ? `\`${crmDealId}\`` : "—"} |\n` +
-            `| **Zoho Projects** | Task & milestone execution tracker | 🔜 Next integration phase | — |\n` +
-            `| **Zoho Books** | Advance payment, escrow & GST invoicing | 🔜 Manual by Finance | — |\n\n` +
-            `SPOCs assigned: ${assignedNames}\n` +
-            `> Finance team (Sneha Nair) should raise the Zoho Books invoice for advance payment escrow confirmation.`,
+            `| **Zoho Projects** | Task & milestone execution tracker | ${created.zohoProjectId ? "✅ Synced" : "⏳ Pending Auth"} | ${created.zohoProjectId ? `\`${created.zohoProjectId}\`` : "—"} |\n` +
+            `| **Zoho Books** | Advance payment, escrow & GST invoicing | ${created.zohoBooksInvoiceId ? "✅ Synced" : "⏳ Pending Auth"} | ${created.zohoBooksInvoiceId ? `\`${created.zohoBooksInvoiceId}\`` : "—"} |\n\n` +
+            `SPOCs assigned: ${assignedNames}`,
           timestamp: new Date(),
         };
 
@@ -400,15 +399,29 @@ export default function CopilotView({
   ) => {
     if (!workingPlan) return;
     const task = workingPlan.tasks.find((t) => t.id === taskId);
+    const updatedTasks = workingPlan.tasks.map((t) => (t.id === taskId ? { ...t, ...updates } : t));
+
     setWorkingPlan((prev) => {
       if (!prev) return null;
       return {
         ...prev,
-        tasks: prev.tasks.map((t) => (t.id === taskId ? { ...t, ...updates } : t)),
+        tasks: updatedTasks,
       };
     });
     setHighlightedTaskIds([taskId]);
     setTimeout(() => setHighlightedTaskIds([]), 3500);
+
+    if (workingPlan.status === "live") {
+      fetch("/api/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update_campaign_tasks",
+          campaignName: workingPlan.campaignData.name,
+          tasks: updatedTasks,
+        }),
+      }).catch((e) => console.error("Failed to sync task update to store:", e));
+    }
 
     if (updates.assignee) {
       showToast(`Reassigned ${task?.sopCode || "Task"} to ${updates.assignee}`, "user");
@@ -423,13 +436,28 @@ export default function CopilotView({
   const handleDeleteTask = (taskId: string) => {
     if (!workingPlan) return;
     const task = workingPlan.tasks.find((t) => t.id === taskId);
+    const updatedTasks = workingPlan.tasks.filter((t) => t.id !== taskId);
+
     setWorkingPlan((prev) => {
       if (!prev) return null;
       return {
         ...prev,
-        tasks: prev.tasks.filter((t) => t.id !== taskId),
+        tasks: updatedTasks,
       };
     });
+
+    if (workingPlan.status === "live") {
+      fetch("/api/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update_campaign_tasks",
+          campaignName: workingPlan.campaignData.name,
+          tasks: updatedTasks,
+        }),
+      }).catch((e) => console.error("Failed to sync task deletion to store:", e));
+    }
+
     showToast(`Removed ${task?.sopCode || "task"} from plan`, "trash");
   };
 
@@ -453,78 +481,46 @@ export default function CopilotView({
       status: "PENDING_APPROVAL",
       zohoCrmTaskId: `ZP-T-${Math.floor(100000 + Math.random() * 900000)}`,
       zohoCrmTaskStatus: "Open",
-      details: newTaskForm.details || newTaskForm.title,
-      verificationRequirement: `${newTaskForm.role} sign-off required before Go-Live`,
+      details: newTaskForm.details.trim(),
+      verificationRequirement: `${newTaskForm.role} sign-off required prior to Go-Live`,
       mandatoryGate: true,
     };
+
+    const updatedTasks = [...workingPlan.tasks, task];
 
     setWorkingPlan((prev) => {
       if (!prev) return null;
       return {
         ...prev,
-        tasks: [...prev.tasks, task],
+        tasks: updatedTasks,
       };
     });
 
+    if (workingPlan.status === "live") {
+      fetch("/api/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update_campaign_tasks",
+          campaignName: workingPlan.campaignData.name,
+          tasks: updatedTasks,
+        }),
+      }).catch((e) => console.error("Failed to sync new task to store:", e));
+    }
+
     setHighlightedTaskIds([newTaskId]);
     setTimeout(() => setHighlightedTaskIds([]), 4000);
+    showToast(`Added ${sopCode} to plan`, "check");
     setIsAddTaskModalOpen(false);
-    showToast(`Added ${sopCode} — ${newTaskForm.title.trim()}`, "sparkle");
-
     setNewTaskForm({
       title: "",
-      aspect: "legal",
-      assignee: "Akash Verma",
-      role: "Legal Counsel",
-      tat: "2 Days",
+      aspect: "implementation",
+      assignee: "Sachin (Tech Team)",
+      role: "Tech Lead & Cloud Architect",
       urgency: "HIGH",
+      tat: "2 Days",
       details: "",
     });
-  };
-
-  type UserIntent = "plan_create" | "plan_modify" | "plan_approve" | "data_query" | "conversational";
-
-  const classifyIntent = (message: string, hasActivePlan: boolean): UserIntent => {
-    const lower = message.toLowerCase().trim();
-
-    if (hasActivePlan) {
-      if (/^(yes|yep|approve|looks good|push|sync|go ahead|proceed|push to zoho|approve and push|accept)/i.test(lower)) {
-        return "plan_approve";
-      }
-      const modSignals = /\b(assign|reassign|change|update|set|remove|delete|add|modify|adjust|improve|suggest|optim|recommend|enhance|failover|concurrency|tat|deadline|urgency|priority|budget|volume)\b/i;
-      if (modSignals.test(lower)) return "plan_modify";
-    }
-
-    // Data / lookup queries — these should always go to the chat API regardless of campaign context
-    const isDataQuery =
-      /\b(invoice|invoices|billing|payment|payments|escrow|receipt|paid|advance)\b/i.test(lower) ||
-      /\b(status|pipeline|deals|live campaigns|active campaigns|show deals)\b/i.test(lower) ||
-      /\b(who is|who's|team|directory|contact|spoc|members)\b/i.test(lower) ||
-      /\b(pending tasks|action items|blockers|overdue|deadlines)\b/i.test(lower) ||
-      /\b(help|capabilities|what can you|what do you do|features)\b/i.test(lower);
-
-    if (isDataQuery) return "data_query";
-
-    const hasSpecificBrand = /\b(nestl|cadbury|pepsi|tata|coca.?cola|britannia|itc|mondelez|pepsico|hindustan)\b/i.test(lower);
-    const hasCampaignNoun = /\b(campaign|plan|brief|promotion|deal)\b/i.test(lower);
-    const hasCreationVerb = /\b(create|generate|build|plan|launch|design|draft|set up|prepare|review|open|load|view)\b/i.test(lower);
-
-    // Check if the user is asking for general educational explanation / definition
-    const hasExclusionSignal = /\b(example\s+of|explain\s+how|what\s+is|what\s+does|meaning\s+of|how\s+does|compare\s+|difference\s+between)\b/i.test(lower);
-
-    if (hasExclusionSignal && !hasSpecificBrand) {
-      return "conversational";
-    }
-
-    if ((hasCreationVerb || hasCampaignNoun) && (hasSpecificBrand || /plan\s+and\s+risks/i.test(lower) || /for\s+[a-z]+/i.test(lower))) {
-      return "plan_create";
-    }
-
-    if (hasCreationVerb && hasCampaignNoun) {
-      return "plan_create";
-    }
-
-    return "conversational";
   };
 
   const sendMessage = useCallback(
@@ -546,74 +542,80 @@ export default function CopilotView({
         };
       });
 
-      const intent = classifyIntent(content, !!(workingPlan && workingPlan.status !== "live"));
+      // ⚡ Set loading and thinking IMMEDIATELY so loader animation shows instantly
+      setIsLoading(true);
+      setIsThinking(true);
+      setToolCallLabel("Analyzing prompt & SOP requirements…");
 
-      if (intent === "plan_approve") {
-        await handleApprovePlanToZoho();
-        return;
-      }
-
+      let activePlan = workingPlan;
       let planModified = false;
       let modificationSummary = "";
-      let activePlan = workingPlan;
+      let intent = "CHAT";
 
-      if (intent === "plan_modify" && workingPlan) {
-        const modResult = applyPlanModifications(
-          workingPlan.tasks,
-          workingPlan.campaignData,
-          content
-        );
+      // 🧠 Let AI understand the prompt and intent dynamically
+      try {
+        const intentRes = await fetch("/api/ai/intent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: content,
+            activePlan: workingPlan,
+            sessionId: session.id,
+          }),
+        });
 
-        if (modResult.hasModifications) {
-          planModified = true;
-          modificationSummary = modResult.summaryMarkdown;
+        if (intentRes.ok) {
+          const intentData = await intentRes.json();
+          intent = intentData.intent || "CHAT";
 
-          const updatedPlan: WorkingPlanState = {
-            ...workingPlan,
-            tasks: modResult.updatedTasks,
-            campaignData: modResult.updatedCampaignData,
-          };
-          activePlan = updatedPlan;
-          setWorkingPlan(updatedPlan);
+          if (intentData.intent === "PLAN_APPROVE") {
+            await handleApprovePlanToZoho();
+            return;
+          }
 
-          setIsPlanPanelOpen(true);
-          setHighlightedTaskIds(modResult.modifiedTaskIds);
-          setTimeout(() => setHighlightedTaskIds([]), 6000);
-          showToast(`✨ Updated ${modResult.modifiedTaskIds.length} tasks — panel opened`, "sparkle");
-        }
-      } else if (!workingPlan && intent === "plan_create") {
-        setIsPlanPanelOpen(true);
-        showToast("🧠 AI Brain decomposing brief & generating bespoke tasks...", "sparkle");
+          if (intentData.intent === "PLAN_CREATE" && intentData.plan && intentData.campaignData) {
+            const newWorkingPlan: WorkingPlanState = {
+              campaignData: intentData.campaignData,
+              tasks: intentData.plan.tasks,
+              aspectSummary: intentData.plan.aspectSummary,
+              status: "draft",
+            };
+            activePlan = newWorkingPlan;
+            setWorkingPlan(newWorkingPlan);
+            setIsPlanPanelOpen(true);
+            setToolCallLabel("Generated 4-aspect operational matrix…");
+            showToast(
+              `✨ AI generated ${intentData.plan.tasks.length} bespoke tasks for ${intentData.campaignData.name}`,
+              "sparkle"
+            );
+          } else if (intentData.intent === "PLAN_MODIFY" && workingPlan) {
+            const modResult = applyPlanModifications(
+              workingPlan.tasks,
+              workingPlan.campaignData,
+              content
+            );
 
-        try {
-          const planRes = await fetch("/api/campaigns", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "generate_plan",
-              campaignInput: { brief: content },
-            }),
-          });
-          if (planRes.ok) {
-            const planJson = await planRes.json();
-            if (planJson.plan && planJson.campaignData) {
-              const newWorkingPlan: WorkingPlanState = {
-                campaignData: planJson.campaignData,
-                tasks: planJson.plan.tasks,
-                aspectSummary: planJson.plan.aspectSummary,
-                status: "draft",
+            if (modResult.hasModifications) {
+              planModified = true;
+              modificationSummary = modResult.summaryMarkdown;
+
+              const updatedPlan: WorkingPlanState = {
+                ...workingPlan,
+                tasks: modResult.updatedTasks,
+                campaignData: modResult.updatedCampaignData,
               };
-              activePlan = newWorkingPlan;
-              setWorkingPlan(newWorkingPlan);
-              showToast(
-                `✨ AI generated ${planJson.plan.tasks.length} bespoke tasks for ${planJson.campaignData.name}`,
-                "sparkle"
-              );
+              activePlan = updatedPlan;
+              setWorkingPlan(updatedPlan);
+
+              setIsPlanPanelOpen(true);
+              setHighlightedTaskIds(modResult.modifiedTaskIds);
+              setTimeout(() => setHighlightedTaskIds([]), 6000);
+              showToast(`✨ Updated ${modResult.modifiedTaskIds.length} tasks — panel opened`, "sparkle");
             }
           }
-        } catch (e) {
-          console.error("AI Plan generation error:", e);
         }
+      } catch (err) {
+        console.warn("AI Intent evaluation warning:", err);
       }
 
       let promptToSend = content;
@@ -644,6 +646,7 @@ export default function CopilotView({
       setIsLoading(true);
       setIsThinking(true);
       setToolCallLabel(null);
+      const thinkingStartTime = Date.now();
 
       try {
         const controller = new AbortController();
@@ -714,12 +717,18 @@ export default function CopilotView({
                         "Zoho CRM Deals & Campaigns": "Querying Zoho CRM deals...",
                         "Zoho CRM Invoices": "Querying Zoho CRM invoices...",
                         "Zoho CRM Client Accounts": "Querying Zoho CRM accounts...",
-                        "Campaign Knowledge Base": "Searching knowledge base...",
+                        "Campaign Knowledge Base": "Querying Zoho Knowledge Base...",
+                        "Supabase Vector Store": "Querying Zoho Knowledge Base...",
+                        "Supabase Vector Retriever": "Querying Zoho Knowledge Base...",
                         "Pending Tasks & SOP Action Items": "Loading pending tasks...",
                       };
-                      const displayLabel =
+                      let displayLabel =
                         labelMap[parsed.toolCall as string] ||
                         `Processing: ${parsed.toolCall}...`;
+                      displayLabel = displayLabel
+                        .replace(/supabase/gi, "Zoho Knowledge Base")
+                        .replace(/pgvector/gi, "SOP Index")
+                        .replace(/vector store/gi, "Zoho Knowledge Base");
                       setToolCallLabel(displayLabel);
                       continue;
                     }
@@ -748,13 +757,19 @@ export default function CopilotView({
                         "Zoho CRM Deals & Campaigns": "Querying Zoho CRM deals...",
                         "Zoho CRM Invoices": "Querying Zoho CRM invoices...",
                         "Zoho CRM Client Accounts": "Querying Zoho CRM accounts...",
-                        "Campaign Knowledge Base": "Searching knowledge base...",
+                        "Campaign Knowledge Base": "Querying Zoho Knowledge Base...",
+                        "Supabase Vector Store": "Querying Zoho Knowledge Base...",
+                        "Supabase Vector Retriever": "Querying Zoho Knowledge Base...",
                         "Pending Tasks & SOP Action Items": "Loading pending tasks...",
                       };
-                      setToolCallLabel(
+                      let displayLabel =
                         labelMap[parsed.toolCall as string] ||
-                        `Processing: ${parsed.toolCall}...`
-                      );
+                        `Processing: ${parsed.toolCall}...`;
+                      displayLabel = displayLabel
+                        .replace(/supabase/gi, "Zoho Knowledge Base")
+                        .replace(/pgvector/gi, "SOP Index")
+                        .replace(/vector store/gi, "Zoho Knowledge Base");
+                      setToolCallLabel(displayLabel);
                       continue;
                     } else {
                       token = parsed.text || parsed.content || parsed.output || "";
@@ -769,16 +784,22 @@ export default function CopilotView({
 
                   if (!firstChunkReceived) {
                     firstChunkReceived = true;
-                    setIsThinking(false);
+                    const elapsed = Date.now() - thinkingStartTime;
+                    const minThinkingDuration = 1200;
+                    const remainingDelay = Math.max(0, minThinkingDuration - elapsed);
 
-                    const initialContent = planModified && modificationSummary
-                      ? `${modificationSummary}\n\n---\n${accumulatedContent}`
-                      : accumulatedContent;
+                    if (remainingDelay > 0) {
+                      setTimeout(() => {
+                        setIsThinking(false);
+                      }, remainingDelay);
+                    } else {
+                      setIsThinking(false);
+                    }
 
                     const initialMsg: Message = {
                       id: `msg-${Date.now()}-assistant`,
                       role: "assistant",
-                      content: initialContent,
+                      content: accumulatedContent,
                       timestamp: new Date(),
                     };
                     setSession((prev) => ({
@@ -790,13 +811,9 @@ export default function CopilotView({
                       const msgs = [...prev.messages];
                       const lastIdx = msgs.length - 1;
                       if (lastIdx >= 0 && msgs[lastIdx].role === "assistant") {
-                        const finalContent = planModified && modificationSummary
-                          ? `${modificationSummary}\n\n---\n${accumulatedContent}`
-                          : accumulatedContent;
-
                         msgs[lastIdx] = {
                           ...msgs[lastIdx],
-                          content: finalContent,
+                          content: accumulatedContent,
                         };
                       }
                       return { ...prev, messages: msgs };
@@ -1263,7 +1280,7 @@ export default function CopilotView({
                     ) : (
                       <>
                         <CheckCircle size={13} weight="fill" />
-                        <span>Approve & Sync to Zoho CRM</span>
+                        <span>Approve & Sync to Zoho</span>
                       </>
                     )}
                   </button>
@@ -1421,26 +1438,14 @@ export default function CopilotView({
                           </div>
 
                           <div className="flex items-center gap-1.5 flex-shrink-0">
-                            {/* TAT Editor Pill */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const nextTat =
-                                  task.tat === "1 Day"
-                                    ? "2 Days"
-                                    : task.tat === "2 Days"
-                                    ? "3 Days"
-                                    : task.tat === "3 Days"
-                                    ? "5 Days"
-                                    : "1 Day";
-                                handleUpdateTaskField(task.id, { tat: nextTat });
-                              }}
-                              className="text-[10.5px] font-mono font-medium px-2 py-0.5 rounded-md bg-stone-100 hover:bg-stone-200 text-stone-600 hover:text-stone-900 flex items-center gap-1 transition-colors cursor-pointer border border-stone-200/60"
-                              title="Click to cycle TAT duration"
+                            {/* TAT Display Pill (Duration - editable only via chat) */}
+                            <div
+                              className="text-[10.5px] font-mono font-medium px-2 py-0.5 rounded-md bg-stone-100 text-stone-600 flex items-center gap-1 border border-stone-200/60"
+                              title="Task duration (edit via chat)"
                             >
                               <Clock size={11} className="text-stone-400" />
                               {task.tat}
-                            </button>
+                            </div>
 
                             {/* Urgency Selector */}
                             <button

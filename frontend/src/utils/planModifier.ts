@@ -301,14 +301,22 @@ export function applyPlanModifications(
     }
   }
 
-  // 2. REASSIGNMENT: E.g., "assign all legal tasks to Akash Verma" or "assign legal to Akash"
+  // 2. TASK ADDITION INTENT CHECK: E.g., "add a legal task...", "we need a task to...", "create compliance milestone..."
+  const isAddIntent =
+    !isImprovementIntent &&
+    ((/\b(add|create|include|insert|need|set\s+up|make|put)\b/i.test(lower) &&
+      /\b(task|requirement|item|action|milestone|gate|check|audit|review)\b/i.test(lower)) ||
+      /^(?:please\s+|can\s+you\s+|kindly\s+|hey\s+|copilot\s+)?(?:add|create|include|insert|set\s+up)\s+/i.test(lower));
+
+  // 3. REASSIGNMENT: E.g., "assign all legal tasks to Akash Verma" or "assign legal to Akash"
   const isReassignIntent =
-    lower.includes("assign") ||
-    lower.includes("reassign") ||
-    lower.includes("make owner") ||
-    lower.includes("set owner") ||
-    lower.includes("give to") ||
-    lower.includes("hand over");
+    !isAddIntent &&
+    (lower.includes("assign") ||
+      lower.includes("reassign") ||
+      lower.includes("make owner") ||
+      lower.includes("set owner") ||
+      lower.includes("give to") ||
+      lower.includes("hand over"));
 
   if (isReassignIntent) {
     const requestedName = extractRequestedAssigneeName(input);
@@ -420,7 +428,41 @@ export function applyPlanModifications(
     }
   }
 
-  // 3. TAT / DEADLINE MODIFICATIONS: E.g., "change legal tasks TAT to 1 day", "set task 2 TAT to 3 days"
+  // 2.5 TASK RENAMING / TITLE EDITING: E.g., "rename task 1 to XYZ", "change task 2 name to...", "update title of task 3 to..."
+  const isRenameIntent =
+    lower.includes("rename") ||
+    lower.includes("change name") ||
+    lower.includes("change title") ||
+    lower.includes("update name") ||
+    lower.includes("update title") ||
+    lower.includes("set name of task") ||
+    lower.includes("set title of task");
+
+  if (isRenameIntent) {
+    const taskIndexMatch = lower.match(/task\s*(?:#|no\.?|number)?\s*(\d+)/i);
+    const specificIndex = taskIndexMatch ? parseInt(taskIndexMatch[1], 10) - 1 : null;
+
+    const titleMatch =
+      input.match(/(?:to|as|=)\s*["']?([^"'\n]+?)["']?$/i) ||
+      input.match(/(?:rename|title|name)\s*(?:task\s*\d+\s*)?(?:to|as|=)\s*["']?([^"'\n]+?)["']?$/i);
+
+    if (specificIndex !== null && specificIndex >= 0 && specificIndex < tasks.length && titleMatch && titleMatch[1]) {
+      const cleanNewTitle = titleMatch[1].trim().replace(/^["']|["']$/g, "");
+      if (cleanNewTitle.length > 2) {
+        tasks[specificIndex] = {
+          ...tasks[specificIndex],
+          title: cleanNewTitle,
+        };
+        modifiedTaskIds.push(tasks[specificIndex].id);
+        changesSummary.push(
+          `• **${tasks[specificIndex].sopCode}**: Renamed task to **"${cleanNewTitle}"**`
+        );
+        actionType = actionType === "none" ? "update_metadata" : "multiple";
+      }
+    }
+  }
+
+  // 3. TAT / DEADLINE MODIFICATIONS: E.g., "change legal tasks TAT to 1 day", "set task 2 TAT to 3 days", "change duration to 4 days"
   const isTatIntent =
     lower.includes("tat") ||
     lower.includes("deadline") ||
@@ -428,10 +470,14 @@ export function applyPlanModifications(
     lower.includes("turnaround") ||
     lower.includes("working days") ||
     lower.includes("working day") ||
-    lower.includes("duration");
+    lower.includes("duration") ||
+    lower.includes("days") ||
+    lower.includes("day");
 
-  if (isTatIntent) {
-    const daysMatch = lower.match(/(\d+)\s*(?:working\s*)?(?:day|days|h|hours|hr|hrs)/i);
+  if (isTatIntent && !isRenameIntent) {
+    const daysMatch =
+      lower.match(/(?:to|=|\s)\s*(\d+)\s*(?:working\s*)?(?:day|days|d\b|h|hours|hr|hrs)/i) ||
+      lower.match(/(\d+)\s*(?:working\s*)?(?:day|days|d\b|h|hours|hr|hrs)/i);
     let newTat = "2 Days";
     if (daysMatch) {
       const num = parseInt(daysMatch[1], 10);
@@ -580,24 +626,16 @@ export function applyPlanModifications(
   }
 
   // 6. TASK ADDITION: E.g., "add a compliance task for TRAI DLT 48h soak testing"
-  const isAddIntent =
-    (lower.startsWith("add ") ||
-      lower.includes("add a task") ||
-      lower.includes("add new task") ||
-      lower.includes("create task") ||
-      lower.includes("include task") ||
-      lower.includes("add task")) &&
-    !isReassignIntent &&
-    !isImprovementIntent;
-
   if (isAddIntent) {
     let aspect: "legal" | "compliance" | "accounting" | "implementation" = "implementation";
-    if (lower.includes("legal") || lower.includes("t&c") || lower.includes("consent") || lower.includes("nda") || lower.includes("agreement")) {
+    if (/legal|t&c|terms|nda|consent|lawyer|advocate|contract|trademark|ipr|agreement/i.test(lower)) {
       aspect = "legal";
-    } else if (lower.includes("compliance") || lower.includes("trai") || lower.includes("dlt") || lower.includes("audit") || lower.includes("uat")) {
+    } else if (/compliance|trai|dlt|audit|uat|staging|soak|telecom|regulatory|kyc|pan/i.test(lower)) {
       aspect = "compliance";
-    } else if (lower.includes("accounting") || lower.includes("finance") || lower.includes("escrow") || lower.includes("invoice") || lower.includes("tax")) {
+    } else if (/accounting|finance|escrow|invoice|deposit|payment|reconciliation|tax|gst|voucher|po\b/i.test(lower)) {
       aspect = "accounting";
+    } else if (/tech|implementation|ops|gateway|otp|server|cloud|api|webhook|database|sms|karix|gupshup|qr/i.test(lower)) {
+      aspect = "implementation";
     }
 
     const defaultMember =
@@ -609,19 +647,42 @@ export function applyPlanModifications(
         ? BIGCITY_TEAM[6]
         : BIGCITY_TEAM[5];
 
-    let title = input
-      .replace(/^(please\s+|can\s+you\s+|kindly\s+)?(add|create|include)\s+(a\s+)?(new\s+)?(task\s+)?(for\s+|to\s+)?/i, "")
-      .replace(/^(legal|compliance|accounting|tech|implementation)\s+(task\s+)?(for\s+|to\s+)?/i, "")
-      .trim();
+    const specifiedMember = findTeamMember(input);
+    const assignedMember = specifiedMember || defaultMember;
 
-    if (!title || title.length < 5) {
+    // Extract title cleanly
+    let title = "";
+    const quoteMatch = input.match(/["'`]([^"'`\n]+)["'`]/);
+    if (quoteMatch && quoteMatch[1] && quoteMatch[1].trim().length > 1) {
+      title = quoteMatch[1].trim();
+    } else {
+      title = input
+        .replace(/^(?:please\s+|can\s+you\s+|kindly\s+|hey\s+|copilot\s+)?(?:i\s+need|we\s+need|need|add|create|include|insert|set\s+up|make|put)\s+(?:a\s+|an\s+|the\s+|new\s+)*(?:legal|compliance|accounting|tech|implementation|operations|ops)?\s*(?:task|requirement|item|action|milestone|gate|check)?\s*(?:called|named|titled|with\s+title|with\s+name|for|to|of|as|saying|:)?\s*/i, "")
+        .trim();
+    }
+
+    // Clean up any stray quotes, leading/trailing punctuation, TAT phrases, and assignment clauses iteratively
+    let prev = "";
+    while (prev !== title) {
+      prev = title;
+      title = title
+        .replace(/\s+with\s+\d+\s*(?:day|days|working\s*days?|hours?|hrs?|h)\s*(?:tat|deadline|turnaround)?$/i, "")
+        .replace(/\s+(?:tat|deadline|turnaround)\s*(?:of|is|:)?\s*\d+\s*(?:day|days|working\s*days?|hours?|hrs?|h)$/i, "")
+        .replace(/\s+assigned\s+to\s+[A-Za-z\s]+$/i, "")
+        .replace(/^["'`:\-\s]+|["'`.\-\s]+$/g, "")
+        .replace(/^(called|named|titled|with title|with name)\s+/i, "")
+        .trim();
+    }
+
+    const genericWords = ["task", "legal", "compliance", "accounting", "tech", "new task", "requirement"];
+    if (!title || title.length < 3 || genericWords.includes(title.toLowerCase())) {
       title = `Custom ${aspect.toUpperCase()} Requirement`;
     } else {
       title = title.charAt(0).toUpperCase() + title.slice(1);
     }
 
-    if (title.length > 60) {
-      title = title.slice(0, 60) + "…";
+    if (title.length > 80) {
+      title = title.slice(0, 80) + "…";
     }
 
     const aspectTaskCount = tasks.filter((t) => t.aspect === aspect).length + 1;
@@ -633,22 +694,22 @@ export function applyPlanModifications(
       sopCode,
       title,
       aspect,
-      assignee: defaultMember.name,
-      role: defaultMember.role,
+      assignee: assignedMember.name,
+      role: assignedMember.role,
       urgency: lower.includes("urgent") || lower.includes("critical") ? "HIGHEST" : "HIGH",
       tat: lower.includes("24h") || lower.includes("1 day") ? "1 Day" : lower.includes("3 day") ? "3 Days" : "2 Days",
       status: "PENDING_APPROVAL",
       zohoCrmTaskId: `ZP-T-${Math.floor(100000 + Math.random() * 900000)}`,
       zohoCrmTaskStatus: "Open",
       details: input,
-      verificationRequirement: `${defaultMember.role} sign-off required prior to Go-Live`,
+      verificationRequirement: `${assignedMember.role} sign-off required prior to Go-Live`,
       mandatoryGate: true,
     };
 
     tasks.push(newTask);
     modifiedTaskIds.push(newTaskId);
     changesSummary.push(
-      `• Added new **[${aspect.toUpperCase()}]** task: **${sopCode} — ${title}** (Owner: **${defaultMember.name}**, TAT: **${newTask.tat}**)`
+      `• Added new **[${aspect.toUpperCase()}]** task: **${sopCode} — ${title}** (Owner: **${assignedMember.name}**, TAT: **${newTask.tat}**)`
     );
     actionType = actionType === "none" ? "add_task" : "multiple";
   }
@@ -679,7 +740,7 @@ export function applyPlanModifications(
 
   let summaryMarkdown = "";
   if (hasModifications) {
-    summaryMarkdown = `**Plan Successfully Updated Inline**\n\nI've modified the active project plan for **${updatedCampaign.name || "this campaign"}** based on your instruction:\n\n${changesSummary.join("\n")}\n\n**Current Milestone Breakdown:**\n* **Legal**: ${tasks.filter((t) => t.aspect === "legal").length} Tasks (Owner: ${tasks.find((t) => t.aspect === "legal")?.assignee || "Legal SPOC"})\n* **Compliance**: ${tasks.filter((t) => t.aspect === "compliance").length} Tasks\n* **Accounting**: ${tasks.filter((t) => t.aspect === "accounting").length} Tasks\n* **Tech & Ops**: ${tasks.filter((t) => t.aspect === "implementation").length} Tasks\n\nAll changes are reflected live on the right pane. Ready to approve & sync to Zoho CRM when you are!`;
+    summaryMarkdown = `I've updated the campaign plan for **${updatedCampaign.name || "this campaign"}**:\n\n${changesSummary.join("\n")}\n\n*All changes are reflected live on the right canvas.*`;
   }
 
   return {

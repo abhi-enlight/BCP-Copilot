@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Megaphone,
@@ -21,8 +21,10 @@ import {
   Lightning,
   CaretRight,
   Dot,
+  CircleNotch,
+  Trash,
 } from "@phosphor-icons/react";
-import { type Campaign, type AspectTask, INITIAL_CAMPAIGNS, generateAspectPlan } from "@/app/api/campaigns/route";
+import { type Campaign, type AspectTask, generateAspectPlan } from "@/app/api/campaigns/route";
 import ZohoProjectsDrawer from "./ZohoProjectsDrawer";
 import ChatMessage, { type Message } from "@/components/ChatMessage";
 import ChatInput from "@/components/ChatInput";
@@ -74,7 +76,9 @@ interface CampaignsViewProps {
 }
 
 export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot }: CampaignsViewProps) {
-  const [campaigns, setCampaigns] = useState<Campaign[]>(INITIAL_CAMPAIGNS);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFilter, setSelectedFilter] = useState<"All" | "Live" | "Planning" | "In Review">("All");
   const [wizardAspectFilter, setWizardAspectFilter] = useState<"all" | "legal" | "compliance" | "accounting" | "implementation">("all");
@@ -106,6 +110,7 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
   } | null>(null);
 
   const [createdCampaign, setCreatedCampaign] = useState<Campaign | null>(null);
+  const [retryingCampaignId, setRetryingCampaignId] = useState<string | null>(null);
   const [toastNotice, setToastNotice] = useState<{
     id: string;
     text: string;
@@ -121,6 +126,111 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
     },
     []
   );
+
+  const fetchCampaigns = useCallback(async (isManualRefresh = false) => {
+    if (isManualRefresh) setIsRefreshing(true);
+    else setIsLoading(true);
+    try {
+      const res = await fetch("/api/campaigns?sync=true");
+      if (res.ok) {
+        const data = await res.json();
+        setCampaigns(data.campaigns || []);
+        if (isManualRefresh) {
+          showToast(`Live sync complete · ${data.campaigns?.length || 0} active campaigns in Zoho`, "check");
+        }
+      }
+    } catch (e) {
+      console.error("Failed to fetch campaigns from Zoho / DB", e);
+      if (isManualRefresh) showToast("Failed to refresh from Zoho", "info");
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [showToast]);
+
+  const handleRetrySync = useCallback(
+    async (camp: Campaign) => {
+      setRetryingCampaignId(camp.id);
+      try {
+        const res = await fetch("/api/campaigns", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "update_campaign_tasks",
+            campaignId: camp.id,
+            campaignName: camp.name,
+            tasks: camp.tasks,
+          }),
+        });
+        if (res.ok) {
+          showToast("Re-sync webhook fired — polling for Zoho deal ID…", "info");
+          // Poll Supabase for deal ID writeback
+          for (let i = 0; i < 5; i++) {
+            await new Promise((r) => setTimeout(r, 3000));
+            const check = await fetch(`/api/campaigns?action=get_campaign&id=${camp.id}`);
+            if (check.ok) {
+              const json = await check.json();
+              if (json.campaign?.zohoCrmDealId) {
+                showToast(`✅ Synced! Zoho Deal ID: ${json.campaign.zohoCrmDealId}`, "check");
+                fetchCampaigns();
+                setRetryingCampaignId(null);
+                return;
+              }
+            }
+          }
+          showToast("Still pending — n8n may still be processing. Check again shortly.", "info");
+        } else {
+          showToast("Re-sync failed", "info");
+        }
+      } catch {
+        showToast("Re-sync failed — network error", "info");
+      } finally {
+        setRetryingCampaignId(null);
+      }
+    },
+    [showToast, fetchCampaigns]
+  );
+
+  const [deletingCampaignId, setDeletingCampaignId] = useState<string | null>(null);
+
+  const handleDeleteCampaign = useCallback(
+    async (camp: Campaign) => {
+      if (
+        !window.confirm(
+          `Delete "${camp.name}"?\n\nThis will delete the Deal in Zoho CRM, the Project in Zoho Projects, the Invoice in Zoho Books, and remove it from Supabase.`
+        )
+      ) {
+        return;
+      }
+      setDeletingCampaignId(camp.id);
+      showToast(`Deleting "${camp.name}" across Zoho CRM, Projects & Books...`, "info");
+      try {
+        const res = await fetch("/api/campaigns", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "delete_campaign",
+            campaignId: camp.id,
+          }),
+        });
+        if (res.ok) {
+          setCampaigns((prev) => prev.filter((c) => c.id !== camp.id));
+          showToast(`Deleted "${camp.name}" across all Zoho apps & database`, "check");
+        } else {
+          showToast("Failed to delete campaign", "info");
+        }
+      } catch {
+        showToast("Network error deleting campaign", "info");
+      } finally {
+        setDeletingCampaignId(null);
+      }
+    },
+    [showToast]
+  );
+
+  useEffect(() => {
+    fetchCampaigns();
+  }, [fetchCampaigns]);
 
   const demoPresets = [
     {
@@ -185,7 +295,7 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
         setGeneratedPlan(plan);
         const initialAssistantContent = data.aiAnalysis
           ? `I've analyzed **${formData.name}** and generated the 4-aspect plan:\n\n${data.aiAnalysis}\n\nYou can review all tasks on the left. Let me know if you'd like to refine any deadlines or add specific requirements.`
-          : "I've drafted a 4-aspect plan based on your inputs. You can review the tasks on the left. Let me know if you need to add, remove, or modify any tasks before we approve & sync to Zoho CRM.";
+          : "I've drafted a 4-aspect plan based on your inputs. You can review the tasks on the left. Let me know if you need to add, remove, or modify any tasks before we approve & sync to Zoho.";
 
         setChatMessages([
           {
@@ -206,7 +316,7 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
         {
           id: `msg-${Date.now()}-assistant`,
           role: "assistant",
-          content: "I've drafted a 4-aspect plan based on your inputs. You can review the tasks on the left. Let me know if you need to add, remove, or modify any tasks before we approve & sync to Zoho CRM.",
+          content: "I've drafted a 4-aspect plan based on your inputs. You can review the tasks on the left. Let me know if you need to add, remove, or modify any tasks before we approve & sync to Zoho.",
           timestamp: new Date(),
         },
       ]);
@@ -276,12 +386,12 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
           setCreatedCampaign(data.campaign);
           setCampaigns((prev) => [data.campaign, ...prev]);
           setWizardStep("push_success");
-          showToast(`Approved & Synced to Zoho CRM`, "check");
+          showToast(`Approved & Synced to Zoho`, "check");
         }
       }, 1200);
     } catch (e) {
       console.error("Failed to sync to Zoho", e);
-      showToast("Failed to sync to Zoho CRM", "info");
+      showToast("Failed to sync to Zoho", "info");
     }
   };
 
@@ -370,14 +480,49 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
           </span>
         </div>
 
-        <button
-          type="button"
-          onClick={() => { setWizardStep("input"); setIsNewModalOpen(true); }}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-stone-900 hover:bg-amber-700 text-white text-xs font-semibold shadow-sm transition-all duration-200 cursor-pointer"
-        >
-          <Plus size={14} weight="bold" />
-          <span>New Campaign</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={async () => {
+              setIsRefreshing(true);
+              try {
+                const res = await fetch("/api/campaigns", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ action: "validate_and_sync" }),
+                });
+                if (res.ok) {
+                  const data = await res.json();
+                  setCampaigns(data.campaigns || []);
+                  if (data.deleted > 0) {
+                    showToast(`Synced with Zoho CRM · Removed ${data.deleted} deleted deals · ${data.validated} active`, "info");
+                  } else {
+                    showToast(`Live sync complete · All ${data.validated} Zoho CRM deals verified`, "check");
+                  }
+                }
+              } catch {
+                showToast("Validation sync failed", "info");
+              } finally {
+                setIsRefreshing(false);
+              }
+            }}
+            disabled={isRefreshing || isLoading}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white hover:bg-stone-100 text-stone-700 text-xs font-semibold border border-stone-200 shadow-2xs transition-all duration-200 cursor-pointer"
+            title="Fetch live records from Zoho CRM"
+          >
+            <ArrowsClockwise size={13} weight="bold" className={isRefreshing ? "animate-spin text-amber-600" : ""} />
+            <span>{isRefreshing ? "Syncing..." : "Sync Zoho"}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { setWizardStep("input"); setIsNewModalOpen(true); }}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-stone-900 hover:bg-amber-700 text-white text-xs font-semibold shadow-sm transition-all duration-200 cursor-pointer"
+          >
+            <Plus size={14} weight="bold" />
+            <span>New Campaign</span>
+          </button>
+        </div>
       </header>
 
       {/* Main Scrollable Content */}
@@ -413,142 +558,255 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
           </div>
         </div>
 
-        {/* Campaigns Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {filteredCampaigns.map((camp, idx) => {
-            const isLive = camp.status.includes("Live");
-            const totalTasks = camp.tasks?.length || 0;
-            const doneTasks = camp.tasks?.filter(t => t.status === "COMPLETED").length || 0;
-            const legalSummary = `${camp.aspectSummary?.legal?.done || 0}/${camp.aspectSummary?.legal?.total || 3}`;
-            const complianceSummary = `${camp.aspectSummary?.compliance?.done || 0}/${camp.aspectSummary?.compliance?.total || 3}`;
-            const accountingSummary = `${camp.aspectSummary?.accounting?.done || 0}/${camp.aspectSummary?.accounting?.total || 3}`;
-            const techSummary = `${camp.aspectSummary?.implementation?.done || 0}/${camp.aspectSummary?.implementation?.total || 4}`;
-
-            return (
-              <motion.div
-                key={camp.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: idx * 0.05, ease: [0.16, 1, 0.3, 1] }}
-                whileHover={{ y: -1 }}
-                className="p-5 rounded-2xl bg-white border border-stone-200/80 hover:border-amber-300 hover:shadow-md transition-all duration-200 flex flex-col justify-between cursor-default"
+        {/* Content Area: Loading / Empty / Grid */}
+        {isLoading ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {[1, 2].map((n) => (
+              <div key={n} className="p-5 rounded-2xl bg-white border border-stone-200 animate-pulse space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="h-4 w-24 bg-stone-200 rounded" />
+                  <div className="h-4 w-16 bg-stone-200 rounded" />
+                </div>
+                <div className="h-5 w-3/4 bg-stone-200 rounded" />
+                <div className="h-3 w-1/2 bg-stone-100 rounded" />
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  <div className="h-10 bg-stone-50 rounded-lg" />
+                  <div className="h-10 bg-stone-50 rounded-lg" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : filteredCampaigns.length === 0 ? (
+          <div className="flex flex-col items-center justify-center p-12 text-center bg-white rounded-2xl border border-stone-200/80 shadow-xs my-6">
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 mb-4 shadow-xs">
+              <Megaphone size={28} weight="duotone" />
+            </div>
+            <h3 className="text-base font-bold text-stone-900 tracking-tight mb-1">
+              {searchQuery || selectedFilter !== "All"
+                ? "No Matching Campaigns"
+                : "No Active Campaigns in Zoho CRM"}
+            </h3>
+            <p className="text-xs text-stone-500 max-w-md mb-6 leading-relaxed">
+              {searchQuery || selectedFilter !== "All"
+                ? "Try adjusting your search query or status filter."
+                : "Your connected Zoho CRM workspace currently has 0 campaigns or deals. Generate a bespoke 4-aspect campaign plan with AI or create a new brief."}
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => { setWizardStep("input"); setIsNewModalOpen(true); }}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-stone-900 hover:bg-amber-700 text-white text-xs font-semibold shadow-sm transition-all duration-200 cursor-pointer"
               >
-                <div>
-                  {/* Top Row: Campaign label, status, Zoho ID */}
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-stone-100 text-stone-500 border border-stone-200">
-                        #{idx + 1}
+                <Plus size={14} weight="bold" />
+                <span>New Campaign</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => fetchCampaigns(true)}
+                disabled={isRefreshing}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold transition-all duration-200 cursor-pointer border border-stone-200"
+              >
+                <ArrowsClockwise size={13} weight="bold" className={isRefreshing ? "animate-spin" : ""} />
+                <span>Refresh from Zoho</span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* Campaigns Grid */
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {filteredCampaigns.map((camp, idx) => {
+              const isLive = camp.status.includes("Live");
+              const totalTasks = camp.tasks?.length || 0;
+              const legalSummary = `${camp.aspectSummary?.legal?.done || 0}/${camp.aspectSummary?.legal?.total || 3}`;
+              const complianceSummary = `${camp.aspectSummary?.compliance?.done || 0}/${camp.aspectSummary?.compliance?.total || 3}`;
+              const accountingSummary = `${camp.aspectSummary?.accounting?.done || 0}/${camp.aspectSummary?.accounting?.total || 3}`;
+              const techSummary = `${camp.aspectSummary?.implementation?.done || 0}/${camp.aspectSummary?.implementation?.total || 4}`;
+
+              return (
+                <motion.div
+                  key={camp.id}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: idx * 0.05, ease: [0.16, 1, 0.3, 1] }}
+                  whileHover={{ y: -1 }}
+                  className="p-5 rounded-2xl bg-white border border-stone-200/80 hover:border-amber-300 hover:shadow-md transition-all duration-200 flex flex-col justify-between cursor-default"
+                >
+                  <div>
+                    {/* Top Row: Campaign label, status, Zoho ID */}
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-stone-100 text-stone-500 border border-stone-200">
+                          #{idx + 1}
+                        </span>
+                        <span className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full border ${getStatusStyles(camp.status)}`}>
+                          {camp.status}
+                        </span>
+                      </div>
+
+                      {camp.zohoProjectId && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCampaignForDrawer(camp)}
+                          className="inline-flex items-center gap-1 text-[10.5px] font-mono font-semibold px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
+                        >
+                          <Kanban size={11} weight="fill" />
+                          <span>{camp.zohoProjectId}</span>
+                          <CaretRight size={10} weight="bold" className="text-emerald-500" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Title & Client */}
+                    <div className="mb-3">
+                      <h3 className="text-sm font-bold text-stone-900 leading-snug line-clamp-2">
+                        {camp.name}
+                      </h3>
+                      <div className="flex items-center gap-1.5 mt-1 text-[11.5px] text-stone-500">
+                        <span className="font-semibold text-stone-700">{camp.client}</span>
+                        <span className="text-stone-300">·</span>
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-stone-100 text-stone-600 border border-stone-200">
+                          {camp.rewardType}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* 2-Metric Grid */}
+                    <div className="grid grid-cols-2 gap-2 mb-3.5">
+                      <div className="p-2.5 rounded-xl bg-stone-50 border border-stone-200/70">
+                        <span className="text-[10px] text-stone-400 font-medium block uppercase tracking-wider">
+                          Budget
+                        </span>
+                        <span className="text-xs font-bold text-stone-900 font-mono">
+                          {camp.budget}
+                        </span>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-stone-50 border border-stone-200/70">
+                        <span className="text-[10px] text-stone-400 font-medium block uppercase tracking-wider">
+                          Code Volume
+                        </span>
+                        <span className="text-xs font-bold text-stone-900 font-mono truncate block">
+                          {camp.codeVolume}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Aspect Breakdown Pills */}
+                    <div className="flex items-center gap-1.5 text-[11px] mb-3 flex-wrap">
+                      <span>
+                        <span className="text-stone-500 font-medium">Legal</span>{" "}
+                        <span className={camp.aspectSummary?.legal?.done === camp.aspectSummary?.legal?.total ? "text-emerald-600" : "text-stone-400"}>
+                          {legalSummary}
+                        </span>
                       </span>
-                      <span className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full border ${getStatusStyles(camp.status)}`}>
-                        {camp.status}
+                      <span className="text-stone-200">·</span>
+                      <span>
+                        <span className="text-stone-500 font-medium">Compliance</span>{" "}
+                        <span className={camp.aspectSummary?.compliance?.done === camp.aspectSummary?.compliance?.total ? "text-emerald-600" : "text-stone-400"}>
+                          {complianceSummary}
+                        </span>
+                      </span>
+                      <span className="text-stone-200">·</span>
+                      <span>
+                        <span className="text-stone-500 font-medium">Accounting</span>{" "}
+                        <span className={camp.aspectSummary?.accounting?.done === camp.aspectSummary?.accounting?.total ? "text-emerald-600" : "text-stone-400"}>
+                          {accountingSummary}
+                        </span>
+                      </span>
+                      <span className="text-stone-200">·</span>
+                      <span>
+                        <span className="text-stone-500 font-medium">Tech</span>{" "}
+                        <span className={camp.aspectSummary?.implementation?.done === camp.aspectSummary?.implementation?.total ? "text-emerald-600" : "text-stone-400"}>
+                          {techSummary}
+                        </span>
                       </span>
                     </div>
 
-                    {camp.zohoProjectId && (
+                    {/* Progress bar — thin, clean */}
+                    <div className="w-full h-1 bg-stone-100 rounded-full overflow-hidden">
+                      <motion.div
+                        className={`h-full rounded-full ${isLive ? "bg-emerald-500" : "bg-amber-500"}`}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${camp.completionRate}%` }}
+                        transition={{ duration: 0.8, delay: idx * 0.05 + 0.2, ease: [0.16, 1, 0.3, 1] }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Card Footer */}
+                  <div className="pt-4 mt-4 border-t border-stone-100 flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-stone-400 font-mono">
+                      {camp.zohoSyncStatus === "Synced"
+                        ? `Synced ${camp.lastZohoSync || "recently"}`
+                        : camp.zohoSyncStatus === "Pending"
+                        ? "⏳ Pending Zoho sync"
+                        : camp.zohoSyncStatus === "Partial"
+                        ? `Partial · ${camp.lastZohoSync || "recently"}`
+                        : "Not synced"}
+                    </span>
+
+                    <div className="flex items-center gap-1.5">
+                      {camp.zohoSyncStatus === "Pending" && (
+                        <button
+                          type="button"
+                          disabled={retryingCampaignId === camp.id}
+                          onClick={() => handleRetrySync(camp)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-semibold transition-all duration-200 cursor-pointer border border-amber-200 shadow-2xs disabled:opacity-50"
+                          title="Re-fire the Zoho sync webhook and poll for deal ID"
+                        >
+                          <ArrowsClockwise
+                            size={13}
+                            weight="bold"
+                            className={retryingCampaignId === camp.id ? "animate-spin" : ""}
+                          />
+                          <span>{retryingCampaignId === camp.id ? "Syncing…" : "Retry Sync"}</span>
+                        </button>
+                      )}
+                      {onModifyInCopilot && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onModifyInCopilot(camp, {
+                              tasks: camp.tasks || [],
+                              aspectSummary: camp.aspectSummary,
+                            })
+                          }
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-semibold transition-all duration-200 cursor-pointer border border-stone-200 shadow-2xs"
+                          title="Open in Copilot Studio to reassign owners and adjust tasks"
+                        >
+                          <Sparkle size={13} weight="fill" className="text-amber-500" />
+                          <span>Modify in Copilot</span>
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => setSelectedCampaignForDrawer(camp)}
-                        className="inline-flex items-center gap-1 text-[10.5px] font-mono font-semibold px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-900 hover:bg-amber-700 text-white text-xs font-semibold transition-all duration-200 cursor-pointer shadow-sm"
                       >
-                        <Kanban size={11} weight="fill" />
-                        <span>{camp.zohoProjectId}</span>
-                        <CaretRight size={10} weight="bold" className="text-emerald-500" />
+                        <Kanban size={13} weight="bold" />
+                        <span>View Plan · {totalTasks} tasks</span>
                       </button>
-                    )}
-                  </div>
 
-                  {/* Title & Client */}
-                  <h3 className="text-[14px] font-bold text-stone-900 leading-snug mb-1">
-                    {camp.name}
-                  </h3>
-                  <div className="flex items-center gap-1.5 text-xs text-stone-500 mb-4">
-                    <Buildings size={12} className="text-stone-400 flex-shrink-0" />
-                    <span className="font-medium text-stone-700">{camp.client}</span>
-                    <span className="text-stone-300">·</span>
-                    <span className="font-mono text-stone-500">{camp.rewardType}</span>
-                  </div>
-
-                  {/* Aspect inline summary */}
-                  <div className="text-[11px] text-stone-400 font-mono mb-4 flex flex-wrap gap-x-3 gap-y-1">
-                    <span>
-                      <span className="text-stone-500 font-medium">Legal</span>{" "}
-                      <span className={camp.aspectSummary?.legal?.done === camp.aspectSummary?.legal?.total ? "text-emerald-600" : "text-stone-400"}>
-                        {legalSummary}
-                      </span>
-                    </span>
-                    <span className="text-stone-200">·</span>
-                    <span>
-                      <span className="text-stone-500 font-medium">Compliance</span>{" "}
-                      <span className={camp.aspectSummary?.compliance?.done === camp.aspectSummary?.compliance?.total ? "text-emerald-600" : "text-stone-400"}>
-                        {complianceSummary}
-                      </span>
-                    </span>
-                    <span className="text-stone-200">·</span>
-                    <span>
-                      <span className="text-stone-500 font-medium">Accounting</span>{" "}
-                      <span className={camp.aspectSummary?.accounting?.done === camp.aspectSummary?.accounting?.total ? "text-emerald-600" : "text-stone-400"}>
-                        {accountingSummary}
-                      </span>
-                    </span>
-                    <span className="text-stone-200">·</span>
-                    <span>
-                      <span className="text-stone-500 font-medium">Tech</span>{" "}
-                      <span className={camp.aspectSummary?.implementation?.done === camp.aspectSummary?.implementation?.total ? "text-emerald-600" : "text-stone-400"}>
-                        {techSummary}
-                      </span>
-                    </span>
-                  </div>
-
-                  {/* Progress bar — thin, clean */}
-                  <div className="w-full h-1 bg-stone-100 rounded-full overflow-hidden">
-                    <motion.div
-                      className={`h-full rounded-full ${isLive ? "bg-emerald-500" : "bg-amber-500"}`}
-                      initial={{ width: 0 }}
-                      animate={{ width: `${camp.completionRate}%` }}
-                      transition={{ duration: 0.8, delay: idx * 0.05 + 0.2, ease: [0.16, 1, 0.3, 1] }}
-                    />
-                  </div>
-                </div>
-
-                {/* Card Footer */}
-                <div className="pt-4 mt-4 border-t border-stone-100 flex items-center justify-between gap-2">
-                  <span className="text-[11px] text-stone-400 font-mono">
-                    Synced {camp.lastZohoSync || "recently"}
-                  </span>
-
-                  <div className="flex items-center gap-1.5">
-                    {onModifyInCopilot && (
                       <button
                         type="button"
-                        onClick={() =>
-                          onModifyInCopilot(camp, {
-                            tasks: camp.tasks || [],
-                            aspectSummary: camp.aspectSummary,
-                          })
-                        }
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-semibold transition-all duration-200 cursor-pointer border border-stone-200 shadow-2xs"
-                        title="Open in Copilot Studio to reassign owners and adjust tasks"
+                        disabled={deletingCampaignId === camp.id}
+                        onClick={() => handleDeleteCampaign(camp)}
+                        className="p-2 rounded-xl bg-stone-100 hover:bg-rose-50 text-stone-400 hover:text-rose-600 transition-colors cursor-pointer border border-stone-200 shadow-2xs disabled:opacity-50"
+                        title="Delete campaign across Zoho CRM, Projects, Books & Database"
                       >
-                        <Sparkle size={13} weight="fill" className="text-amber-500" />
-                        <span>Modify in Copilot</span>
+                        {deletingCampaignId === camp.id ? (
+                          <ArrowsClockwise size={13} weight="bold" className="animate-spin text-rose-600" />
+                        ) : (
+                          <Trash size={13} weight="bold" />
+                        )}
                       </button>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => setSelectedCampaignForDrawer(camp)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-900 hover:bg-amber-700 text-white text-xs font-semibold transition-all duration-200 cursor-pointer shadow-sm"
-                    >
-                      <Kanban size={13} weight="bold" />
-                      <span>View Plan · {totalTasks} tasks</span>
-                    </button>
+                    </div>
                   </div>
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* NEW CAMPAIGN MODAL */}
@@ -910,7 +1168,7 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                       <ArrowsClockwise size={28} weight="bold" className="animate-spin" />
                     </div>
                     <div>
-                      <h4 className="text-[15px] font-bold text-stone-900">Syncing to Zoho CRM…</h4>
+                      <h4 className="text-[15px] font-bold text-stone-900">Syncing to Zoho…</h4>
                       <p className="text-xs text-stone-500 max-w-sm mt-1.5 leading-relaxed">
                         Creating Deal in Zoho CRM, building 4 milestone aspects, and syncing all tasks with assignees & due dates.
                       </p>
@@ -926,11 +1184,11 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                     </div>
                     <div>
                       <span className="text-[11px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-                        LIVE · Zoho CRM
+                        LIVE · Zoho
                       </span>
                       <h4 className="text-lg font-bold text-stone-900 mt-2 max-w-md">{createdCampaign.name}</h4>
                       <p className="text-xs text-stone-500 max-w-md mt-1.5 leading-relaxed">
-                        Synced to Zoho CRM with 4 milestone aspects and all tasks initialized. Live synchronization active.
+                        Synced to Zoho with 4 milestone aspects and all tasks initialized. Live synchronization active.
                       </p>
                     </div>
                     <div className="flex items-center gap-3 mt-2">

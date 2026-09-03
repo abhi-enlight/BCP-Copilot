@@ -22,8 +22,8 @@ interface ThinkingProcessProps {
 
 const PLAN_THINKING_STEPS = [
   {
-    id: "zoho",
-    title: "Querying Zoho CRM & Suite",
+    id: "context",
+    title: "Querying Zoho CRM & Campaign Suite",
     desc: "Fetching active deals, milestones, and commercial budgets",
     icon: Database,
     color: "text-amber-600",
@@ -31,8 +31,8 @@ const PLAN_THINKING_STEPS = [
     border: "border-amber-200",
   },
   {
-    id: "supabase",
-    title: "Searching Supabase Vector Knowledge Base",
+    id: "zoho_kb",
+    title: "Querying Zoho Knowledge Base & SOPs",
     desc: "Matching 34 BigCity SOP tasks & historical OTP precedents",
     icon: Brain,
     color: "text-sky-600",
@@ -41,8 +41,8 @@ const PLAN_THINKING_STEPS = [
   },
   {
     id: "guardrail",
-    title: "Evaluating SOW Policy Guardrails",
-    desc: "Verifying SPOC assignments (Sachin, Khaleel, CS Heads)",
+    title: "Evaluating SOW Policy Guardrails & SPOCs",
+    desc: "Verifying SPOC assignments (Sachin, Khaleel, Akash, Sneha)",
     icon: ShieldCheck,
     color: "text-emerald-600",
     bg: "bg-emerald-50",
@@ -50,8 +50,8 @@ const PLAN_THINKING_STEPS = [
   },
   {
     id: "synthesis",
-    title: "Synthesizing Campaign Strategy",
-    desc: "Generating structured recommendation and action timeline",
+    title: "Synthesizing Strategy & Live Canvas Updates",
+    desc: "Generating structured recommendation and action plan",
     icon: Sparkle,
     color: "text-indigo-600",
     bg: "bg-indigo-50",
@@ -61,18 +61,36 @@ const PLAN_THINKING_STEPS = [
 
 const CHAT_THINKING_STEPS = [
   {
-    id: "supabase",
-    title: "Searching Supabase Vector Knowledge Base",
-    desc: "Retrieving campaign precedents and SOPs",
+    id: "context",
+    title: "Analyzing Campaign Context & Intent",
+    desc: "Parsing prompt parameters, task modifications & TAT deadlines",
     icon: Brain,
+    color: "text-amber-600",
+    bg: "bg-amber-50",
+    border: "border-amber-200",
+  },
+  {
+    id: "zoho_kb",
+    title: "Querying Zoho Knowledge Base & SOPs",
+    desc: "Retrieving campaign precedents, legal rules & compliance policies",
+    icon: Database,
     color: "text-sky-600",
     bg: "bg-sky-50",
     border: "border-sky-200",
   },
   {
+    id: "guardrail",
+    title: "Checking SOW Guardrails & Department SPOCs",
+    desc: "Validating ownership gates for Legal, Finance, Tech & Compliance",
+    icon: ShieldCheck,
+    color: "text-emerald-600",
+    bg: "bg-emerald-50",
+    border: "border-emerald-200",
+  },
+  {
     id: "synthesis",
-    title: "Generating Response",
-    desc: "Synthesizing answer based on BCP guidelines",
+    title: "Synthesizing AI Response & Actions",
+    desc: "Formulating verified guidance and updating milestone canvas",
     icon: Sparkle,
     color: "text-indigo-600",
     bg: "bg-indigo-50",
@@ -81,15 +99,29 @@ const CHAT_THINKING_STEPS = [
 ];
 
 export default function ThinkingProcess({ elapsedTime = 0, mode = "plan", toolCallLabel }: ThinkingProcessProps) {
+  const steps = mode === "plan" ? PLAN_THINKING_STEPS : CHAT_THINKING_STEPS;
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isExpanded, setIsExpanded] = useState(true);
   const [seconds, setSeconds] = useState(elapsedTime);
-  const steps = mode === "plan" ? PLAN_THINKING_STEPS : CHAT_THINKING_STEPS;
 
-  // When a live tool-call label arrives, freeze step advancement
-  // and display the label at the current step position.
   const activeLabel = toolCallLabel ?? null;
 
+  // Auto-route step index when a specific live toolCall arrives
+  useEffect(() => {
+    if (!activeLabel) return;
+    const label = activeLabel.toLowerCase();
+    if (label.includes("crm") || label.includes("deal") || label.includes("invoice") || label.includes("account")) {
+      setCurrentStepIndex((prev) => Math.max(prev, 0));
+    } else if (label.includes("knowledge") || label.includes("sop") || label.includes("retriever") || label.includes("vector")) {
+      setCurrentStepIndex((prev) => Math.max(prev, 1));
+    } else if (label.includes("task") || label.includes("guardrail") || label.includes("policy") || label.includes("spoc")) {
+      setCurrentStepIndex((prev) => Math.max(prev, 2));
+    } else if (label.includes("synthesiz") || label.includes("generat") || label.includes("response")) {
+      setCurrentStepIndex((prev) => Math.max(prev, 3));
+    }
+  }, [activeLabel]);
+
+  // Active duration timer
   useEffect(() => {
     const timer = setInterval(() => {
       setSeconds((prev) => +(prev + 0.1).toFixed(1));
@@ -97,14 +129,13 @@ export default function ThinkingProcess({ elapsedTime = 0, mode = "plan", toolCa
     return () => clearInterval(timer);
   }, []);
 
+  // Smooth progressive step cycling: ~350ms per step
   useEffect(() => {
-    // Pause step cycling while a live tool-call label is being shown
-    if (activeLabel) return;
     const stepInterval = setInterval(() => {
       setCurrentStepIndex((prev) => (prev < steps.length - 1 ? prev + 1 : prev));
-    }, 1200);
+    }, 350);
     return () => clearInterval(stepInterval);
-  }, [steps.length, activeLabel]);
+  }, [steps.length]);
 
   const currentStep = steps[currentStepIndex] || steps[0];
 

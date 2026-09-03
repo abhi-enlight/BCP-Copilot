@@ -191,7 +191,6 @@ export default function UsersAndRolesView({ onUserCountChange }: UsersAndRolesVi
   const [inviteName, setInviteName] = useState("");
   const [inviteEmailPrefix, setInviteEmailPrefix] = useState("");
   const [inviteRole, setInviteRole] = useState<RoleType>("Project Manager");
-  const [inviteDepartment, setInviteDepartment] = useState("Campaign Operations");
   const [inviteError, setInviteError] = useState("");
 
   const showToast = (msg: string) => {
@@ -280,7 +279,7 @@ export default function UsersAndRolesView({ onUserCountChange }: UsersAndRolesVi
       name: inviteName.trim(),
       email: fullEmail,
       role: inviteRole,
-      department: inviteDepartment.trim() || "General Operations",
+      department: inviteRole === "Legal" ? "Legal & Regulatory" : inviteRole === "Admin" ? "Executive Leadership" : "Campaign Operations",
       status: "invited",
       lastActive: "Just invited",
       initials,
@@ -297,7 +296,6 @@ export default function UsersAndRolesView({ onUserCountChange }: UsersAndRolesVi
     setInviteName("");
     setInviteEmailPrefix("");
     setInviteRole("Campaign Manager");
-    setInviteDepartment("Campaign Operations");
     showToast(`Invited ${newUser.name}`);
   };
 
@@ -582,23 +580,6 @@ export default function UsersAndRolesView({ onUserCountChange }: UsersAndRolesVi
                       @bigcity.in
                     </span>
                   </div>
-                </div>
-
-                {/* Department */}
-                <div>
-                  <label className="block text-[11px] font-semibold text-stone-600 mb-1">Department</label>
-                  <select
-                    value={inviteDepartment}
-                    onChange={(e) => setInviteDepartment(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-lg bg-stone-50 border border-stone-200 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 text-stone-900"
-                  >
-                    <option value="Campaign Operations">Campaign Operations</option>
-                    <option value="Consumer Electronics">Consumer Electronics</option>
-                    <option value="FMCG Brand Campaigns">FMCG Brand Campaigns</option>
-                    <option value="Platforms & OTP Gateways">Platforms & OTP Gateways</option>
-                    <option value="Legal & Regulatory Affairs">Legal & Regulatory Affairs</option>
-                    <option value="Vendor & Reward Operations">Vendor & Reward Operations</option>
-                  </select>
                 </div>
 
                 {/* Role */}

@@ -15,6 +15,7 @@ frontend/out/
 shared_data/
 .freebuff/
 *.log
+*.zip
 .DS_Store
 
 # IDE & Gemini internal artifacts

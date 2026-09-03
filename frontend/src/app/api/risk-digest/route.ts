@@ -58,7 +58,7 @@ export async function GET() {
       totalActiveDeals: criticalActionItems.length,
       criticalActionItems,
       systemStatus: "degraded", // live n8n workflow was unavailable, fallback used
-      dataSource: "supabase_fallback",
+      dataSource: "zoho_store_fallback",
     });
   } catch (supabaseError) {
     console.error("[risk-digest] Supabase fallback also failed:", supabaseError);

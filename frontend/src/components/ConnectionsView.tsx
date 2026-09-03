@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   PlugsConnected,
@@ -38,6 +38,18 @@ export default function ConnectionsView() {
   const [pingSuccessNotice, setPingSuccessNotice] = useState<string | null>(null);
   const [selectedService, setSelectedService] = useState<string>("zoho-projects");
   const [activeTab, setActiveTab] = useState<"overview" | "api_traffic" | "oauth">("overview");
+  const [dealCount, setDealCount] = useState<number>(3);
+
+  useEffect(() => {
+    fetch("/api/campaigns")
+      .then((res) => res.ok ? res.json() : { campaigns: [] })
+      .then((data) => {
+        if (Array.isArray(data.campaigns)) {
+          setDealCount(data.campaigns.length);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const services: ServiceConnection[] = [
     {
@@ -52,14 +64,14 @@ export default function ConnectionsView() {
       iconBg: "bg-emerald-50 border-emerald-200",
       iconColor: "text-emerald-600",
       metrics: [
-        { label: "Active Projects", value: "4" },
-        { label: "Tasks Synced", value: "32" },
-        { label: "Latency", value: "34ms" },
-        { label: "Portal", value: "#81293" },
+        { label: "Portal", value: "enlightlabdotcom" },
+        { label: "Data Center", value: "zoho.in (India)" },
+        { label: "Milestones", value: "4 Aspects" },
+        { label: "Status", value: "Integrated" },
       ],
-      endpoint: "https://projects.zoho.in/restapi/portal/81293",
+      endpoint: "https://projects.zoho.in/restapi/portal/enlightlabdotcom",
       authMethod: "OAuth 2.0 (ZohoProjects.projects.ALL)",
-      lastPing: "Just now (HTTP 200)",
+      lastPing: "Connected",
       capabilities: [
         "Create Projects on Campaign Approval (Write)",
         "Generate 4 Aspect Milestones (Write)",
@@ -80,14 +92,14 @@ export default function ConnectionsView() {
       iconBg: "bg-emerald-50 border-emerald-200",
       iconColor: "text-emerald-600",
       metrics: [
-        { label: "Deals Synced", value: "48" },
-        { label: "Accounts", value: "19" },
-        { label: "Latency", value: "48ms" },
-        { label: "Modules", value: "Deals, Accounts" },
+        { label: "Active Deals", value: String(dealCount) },
+        { label: "Org Name", value: "Enlight" },
+        { label: "Data Center", value: "zoho.in (India)" },
+        { label: "Pipeline", value: "Qualification" },
       ],
       endpoint: "https://www.zohoapis.in/crm/v2",
       authMethod: "OAuth 2.0 (ZohoCRM.modules.ALL)",
-      lastPing: "1 min ago (HTTP 200)",
+      lastPing: "Connected",
       capabilities: [
         "Read Commercial SOW Estimates, Deal Stages & Client Briefs (Read)",
         "Auto-create Deals & Pipeline stages on campaign brief ingestion (Write)",
@@ -107,14 +119,14 @@ export default function ConnectionsView() {
       iconBg: "bg-emerald-50 border-emerald-200",
       iconColor: "text-emerald-600",
       metrics: [
-        { label: "Advance Verif.", value: "100% Active" },
-        { label: "Ledger", value: "Escrow Pool" },
-        { label: "Latency", value: "52ms" },
-        { label: "Org ID", value: "#81293" },
+        { label: "Module", value: "Invoices & Escrow" },
+        { label: "Org Name", value: "Enlight" },
+        { label: "Data Center", value: "zoho.in (India)" },
+        { label: "Status", value: "Integrated" },
       ],
       endpoint: "https://books.zoho.in/api/v3",
       authMethod: "OAuth 2.0 (ZohoBooks.fullaccess.ALL)",
-      lastPing: "2 mins ago (HTTP 200)",
+      lastPing: "Just now (HTTP 200)",
       capabilities: [
         "100% Advance Bank Receipt Verification for EGV Pools (Read)",
         "Generate GST Invoices for campaign retainer & sticker printing (Write)",
@@ -123,28 +135,28 @@ export default function ConnectionsView() {
       ],
     },
     {
-      id: "supabase",
-      name: "Supabase pgvector",
-      category: "Vector Knowledge Base",
+      id: "zoho-knowledge",
+      name: "Zoho Knowledge Base",
+      category: "Campaign SOPs & Precedents",
       status: "synced",
       statusLabel: "34 SOPs",
-      statusColor: "bg-sky-50 text-sky-700 border-sky-200",
+      statusColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
       readWriteMode: "Read Only",
-      icon: "https://cdn.simpleicons.org/supabase/0ea5e9",
-      iconBg: "bg-sky-50 border-sky-200",
-      iconColor: "text-sky-600",
+      icon: "https://cdn.simpleicons.org/zoho/10b981",
+      iconBg: "bg-emerald-50 border-emerald-200",
+      iconColor: "text-emerald-600",
       metrics: [
         { label: "Indexed SOPs", value: "34 docs" },
-        { label: "Index", value: "HNSW Cosine" },
-        { label: "Embedding", value: "768-dim" },
-        { label: "Top-K", value: "5 matches" },
+        { label: "Repository", value: "Zoho Knowledge" },
+        { label: "Precedents", value: "34 SOPs" },
+        { label: "Sync Status", value: "Live Synced" },
       ],
-      endpoint: "https://ejawdvxnddgkcgkasove.supabase.co",
-      authMethod: "Service Role Key & Anon Key",
-      lastPing: "3 mins ago (HTTP 200)",
+      endpoint: "https://www.zohoapis.in/crm/v2/knowledge_base",
+      authMethod: "OAuth 2.0 (ZohoCRM.modules.ALL)",
+      lastPing: "Just now (HTTP 200)",
       capabilities: [
         "Retrieve BigCity Assured Reward SOP Precedents",
-        "Semantic search across past campaign risk memos",
+        "Semantic search across past campaign risk memos & governance guidelines",
         "Inject historical learnings into AI Aspect Decomposition",
       ],
     },

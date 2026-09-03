@@ -85,7 +85,7 @@ export default function EmptyState({ onSelectPrompt, onSuggestionClick }: EmptyS
           BCP Assist Campaign Intelligence
         </h2>
         <p className="text-[13px] text-slate-600 max-w-md mx-auto leading-relaxed">
-          Powered by <strong className="text-slate-900 font-semibold">Supabase pgvector</strong> SOP memory, and live{" "}
+          Powered by <strong className="text-slate-900 font-semibold">Zoho Knowledge Base</strong> SOP memory, and live{" "}
           <strong className="text-slate-900 font-semibold">Zoho CRM Suite</strong> integration.
         </p>
       </motion.div>

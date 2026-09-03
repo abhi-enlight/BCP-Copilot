@@ -143,7 +143,10 @@ export async function POST(request: NextRequest) {
                 try {
                   const parsed = JSON.parse(trimmed);
                   if (parsed.type === "begin") {
-                    const nodeName: string = parsed.metadata?.nodeName ?? "AI Agent";
+                    let nodeName: string = parsed.metadata?.nodeName ?? "AI Agent";
+                    if (/supabase|vector/i.test(nodeName)) {
+                      nodeName = "Zoho Knowledge Base";
+                    }
                     sendSSE({ toolCall: nodeName });
                   } else if (parsed.type === "item" && parsed.content) {
                     sendSSE({ text: parsed.content });

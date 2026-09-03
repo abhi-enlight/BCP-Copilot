@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { List } from "@phosphor-icons/react";
 import { motion, AnimatePresence } from "motion/react";
 import Sidebar, { type NavView } from "@/components/Sidebar";
@@ -38,6 +38,18 @@ export default function App() {
   const [currentView, setCurrentView] = useState<NavView>("copilot");
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [activePlanForCopilot, setActivePlanForCopilot] = useState<PlanContextForCopilot | null>(null);
+  const [campaignCount, setCampaignCount] = useState<number>(0);
+
+  useEffect(() => {
+    fetch("/api/campaigns")
+      .then((res) => (res.ok ? res.json() : { campaigns: [] }))
+      .then((data) => {
+        if (Array.isArray(data.campaigns)) {
+          setCampaignCount(data.campaigns.length);
+        }
+      })
+      .catch(() => {});
+  }, [currentView]);
 
   const handleModifyInCopilot = (campaignData: any, plan: any) => {
     setActivePlanForCopilot({ campaignData, plan });
@@ -52,7 +64,7 @@ export default function App() {
         onViewChange={setCurrentView}
         isMobileOpen={isMobileSidebarOpen}
         onMobileClose={() => setIsMobileSidebarOpen(false)}
-        campaignCount={4}
+        campaignCount={campaignCount}
       />
 
       {/* Main Content Area */}

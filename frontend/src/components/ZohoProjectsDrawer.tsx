@@ -118,7 +118,7 @@ export default function ZohoProjectsDrawer({
     setIsSyncing(true);
     try {
       await fetch(`/api/campaigns?action=read_zoho_tasks&id=${campaign.id}`);
-      setSyncNotice("Synced · 100% up to date (32ms)");
+      setSyncNotice("Synced with Zoho · Tasks up to date");
       setTimeout(() => setSyncNotice(null), 3000);
     } catch (err) {
       console.error(err);

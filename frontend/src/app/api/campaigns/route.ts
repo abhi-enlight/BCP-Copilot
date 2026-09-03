@@ -72,169 +72,6 @@ export interface Campaign {
 }
 
 // ---------------------------------------------------------------------------
-// Static seed data (displayed when no Supabase rows exist yet)
-// ---------------------------------------------------------------------------
-export const INITIAL_CAMPAIGNS: Campaign[] = [
-  {
-    id: "camp-001",
-    name: "Coca-Cola Summer Splash ₹50 Assured Cashback",
-    client: "Coca-Cola India Pvt Ltd",
-    category: "Beverages",
-    rewardType: "Cashback",
-    budget: "₹45,00,000",
-    budgetNumeric: 4500000,
-    codeVolume: "500,000 packs",
-    codeVolumeNumeric: 500000,
-    startDate: "2026-09-01",
-    endDate: "2026-11-30",
-    status: "Live",
-    completionRate: 88,
-    zohoCrmDealId: "1418411000000553001",
-    zohoCrmDealUrl: "https://crm.zoho.in/crm/org/tab/Potentials/1418411000000553001",
-    zohoCrmDealStage: "Closed Won",
-    zohoProjectId: "ZP-881290",
-    zohoProjectUrl: "https://projects.zoho.in/portal/bigcity#project/881290",
-    zohoBooksInvoiceId: "ZB-INV-8819",
-    zohoBooksInvoiceUrl: "https://books.zoho.in/app/bigcity#/invoices/ZB-INV-8819",
-    zohoSyncStatus: "Synced",
-    lastZohoSync: "2 mins ago",
-    brief: "National on-pack promotion across 500ml & 750ml PET bottles offering ₹50 instant UPI cashback upon entering unique code on microsite.",
-    aspectSummary: {
-      legal: { total: 4, done: 4, status: "Approved" },
-      compliance: { total: 4, done: 4, status: "Approved" },
-      accounting: { total: 3, done: 3, status: "Approved" },
-      implementation: { total: 5, done: 3, status: "In Review" },
-    },
-    tasks: [
-      {
-        id: "task-001-1",
-        sopCode: "SOP-LEG-01",
-        title: "T&C Drafting & Disclaimer for UPI Instant Cashback",
-        aspect: "legal",
-        assignee: "Prashant Mittal",
-        role: "Legal Head",
-        urgency: "HIGHEST",
-        tat: "2 Days",
-        status: "COMPLETED",
-        zohoCrmTaskId: "ZP-T-553011",
-        zohoCrmTaskStatus: "Closed",
-        details: "Include maximum 1 redemption per mobile number/UPI VPA rule and state jurisdiction clauses.",
-        verificationRequirement: "Written legal sign-off on microsite T&C copy.",
-        mandatoryGate: true,
-      },
-      {
-        id: "task-001-2",
-        sopCode: "SOP-IMP-01",
-        title: "Dedicated High-Traffic AWS Server Provisioning",
-        aspect: "implementation",
-        assignee: "Sachin (Tech Team)",
-        role: "Cloud Architect",
-        urgency: "HIGH",
-        tat: "2 Days",
-        status: "IN_PROGRESS",
-        zohoCrmTaskId: "ZP-T-553012",
-        zohoCrmTaskStatus: "In Progress",
-        details: "Provision auto-scaling cluster capable of handling 8,000 concurrent req/sec during IPL TV commercials.",
-        verificationRequirement: "Load test report (JMeter / k6).",
-        mandatoryGate: true,
-      },
-    ],
-    createdAt: "2026-08-15T10:30:00Z",
-    approvedAt: "2026-08-18T14:20:00Z",
-    approvedBy: "Rohit Sharma (Admin)",
-  },
-  {
-    id: "camp-002",
-    name: "Britannia Marie Gold ₹100 Swiggy Voucher Assured Reward",
-    client: "Britannia Industries Ltd",
-    category: "FMCG",
-    rewardType: "EGV",
-    budget: "₹30,00,000",
-    budgetNumeric: 3000000,
-    codeVolume: "300,000 packs",
-    codeVolumeNumeric: 300000,
-    startDate: "2026-09-15",
-    endDate: "2026-12-15",
-    status: "Live",
-    completionRate: 65,
-    zohoCrmDealId: "1418411000000553021",
-    zohoCrmDealUrl: "https://crm.zoho.in/crm/org/tab/Potentials/1418411000000553021",
-    zohoCrmDealStage: "Proposal/Price Quote",
-    zohoProjectId: "ZP-881291",
-    zohoProjectUrl: "https://projects.zoho.in/portal/bigcity#project/881291",
-    zohoBooksInvoiceId: "ZB-INV-8820",
-    zohoBooksInvoiceUrl: "https://books.zoho.in/app/bigcity#/invoices/ZB-INV-8820",
-    zohoSyncStatus: "Synced",
-    lastZohoSync: "15 mins ago",
-    brief: "Consumer promo offering assured ₹100 Swiggy discount voucher with every 250g family pack of Britannia Marie Gold.",
-    aspectSummary: {
-      legal: { total: 3, done: 3, status: "Approved" },
-      compliance: { total: 3, done: 2, status: "In Review" },
-      accounting: { total: 3, done: 3, status: "Approved" },
-      implementation: { total: 4, done: 1, status: "In Review" },
-    },
-    tasks: [],
-    createdAt: "2026-08-20T11:00:00Z",
-    approvedAt: "2026-08-22T09:45:00Z",
-    approvedBy: "Rohit Sharma (Admin)",
-  },
-  {
-    id: "camp-003",
-    name: "ITC Sunfeast Dark Fantasy Scratch & Win Gold Coin",
-    client: "ITC Limited",
-    category: "FMCG",
-    rewardType: "Scratch & Win",
-    budget: "₹65,00,000",
-    budgetNumeric: 6500000,
-    codeVolume: "1,000,000 packs",
-    codeVolumeNumeric: 1000000,
-    startDate: "2026-10-01",
-    endDate: "2026-12-31",
-    status: "In Review",
-    completionRate: 40,
-    zohoCrmDealId: "1418411000000553041",
-    zohoCrmDealUrl: "https://crm.zoho.in/crm/org/tab/Potentials/1418411000000553041",
-    zohoCrmDealStage: "Qualification",
-    zohoSyncStatus: "Partial",
-    lastZohoSync: "1 hour ago",
-    brief: "Festive scratch card promotion inside packs: 1,000 1g Gold Coins + 500,000 ₹30 Amazon Pay balance rewards.",
-    aspectSummary: {
-      legal: { total: 4, done: 2, status: "In Review" },
-      compliance: { total: 4, done: 1, status: "In Review" },
-      accounting: { total: 3, done: 2, status: "In Review" },
-      implementation: { total: 5, done: 1, status: "Pending" },
-    },
-    tasks: [],
-    createdAt: "2026-08-24T14:15:00Z",
-  },
-  {
-    id: "camp-004",
-    name: "Nestlé Munch Super League Assured Reward",
-    client: "Nestlé India",
-    category: "FMCG",
-    rewardType: "Merchandise",
-    budget: "₹20,00,000",
-    budgetNumeric: 2000000,
-    codeVolume: "200,000 packs",
-    codeVolumeNumeric: 200000,
-    startDate: "2026-10-15",
-    endDate: "2027-01-15",
-    status: "Draft",
-    completionRate: 15,
-    zohoSyncStatus: "Pending",
-    brief: "Gamified cricket season promo with custom merchandise vouchers and jersey rewards.",
-    aspectSummary: {
-      legal: { total: 3, done: 0, status: "Pending" },
-      compliance: { total: 3, done: 0, status: "Pending" },
-      accounting: { total: 3, done: 0, status: "Pending" },
-      implementation: { total: 4, done: 0, status: "Pending" },
-    },
-    tasks: [],
-    createdAt: "2026-08-25T16:00:00Z",
-  },
-];
-
-// ---------------------------------------------------------------------------
 // Metadata Extractor from Prompt / Form Input
 // ---------------------------------------------------------------------------
 export function extractCampaignMetadata(input: {
@@ -248,15 +85,16 @@ export function extractCampaignMetadata(input: {
   startDate?: string;
   endDate?: string;
 }) {
-  const text = `${input.name || ""} ${input.client || ""} ${input.brief || ""}`;
+  const text = `${input.name || ""} ${input.client || ""} ${input.brief || ""}`.trim();
 
-  // Extract quoted name or prominent title
-  const quoteMatch = text.match(/["']([^"']{5,80})["']/);
+  // Extract quoted name or prominent title if not explicitly provided
+  const quoteMatch = text.match(/["']([^"']{3,80})["']/);
+  const trimmedName = (input.name || "").trim();
   const name =
-    input.name && input.name !== "Promotional Campaign" && input.name !== "Active Campaign" && input.name !== "New Campaign"
-      ? input.name
+    trimmedName && trimmedName !== "Promotional Campaign" && trimmedName !== "Active Campaign" && trimmedName !== "New Campaign"
+      ? trimmedName
       : quoteMatch
-      ? quoteMatch[1]
+      ? quoteMatch[1].trim()
       : /cadbury|mondelez/i.test(text)
       ? "Cadbury Celebrations Assured Reward Campaign"
       : /nestl/i.test(text)
@@ -269,15 +107,18 @@ export function extractCampaignMetadata(input: {
       ? "Samsung Galaxy Festive Assured EGV"
       : /tata/i.test(text)
       ? "Tata Tea Gold Assured Reward"
-      : "Consumer Promotion Campaign";
+      : trimmedName || "Consumer Promotion Campaign";
 
   // Extract client
-  const clientMatch = text.match(/for\s+([A-Za-z0-9\s&.,'-]+?)(?:\s+with|\s+having|\s+and|\s+featuring|\s+in|\.|$)/i);
+  const clientMatch = text.match(/for\s+["']?([A-Za-z0-9\s&.,'-]+?)(?:["']|\s+with|\s+having|\s+and|\s+featuring|\s+in|\.|$)/i);
+  const trimmedClient = (input.client || "").trim();
   const client =
-    input.client && input.client !== "Brand Partner" && input.client !== "Enterprise Client"
-      ? input.client
-      : clientMatch
-      ? clientMatch[1].trim()
+    trimmedClient && trimmedClient !== "Brand Partner" && trimmedClient !== "Enterprise Client"
+      ? trimmedClient
+      : /amul/i.test(text)
+      ? "Amul India (GCMMF)"
+      : /puma/i.test(text)
+      ? "Puma Sports India Pvt Ltd"
       : /cadbury|mondelez/i.test(text)
       ? "Mondelez India Foods Pvt Ltd"
       : /nestl/i.test(text)
@@ -288,9 +129,15 @@ export function extractCampaignMetadata(input: {
       ? "Coca-Cola India Pvt Ltd"
       : /samsung/i.test(text)
       ? "Samsung India Electronics"
+      : /itc/i.test(text)
+      ? "ITC Limited"
+      : /britannia/i.test(text)
+      ? "Britannia Industries Ltd"
       : /tata/i.test(text)
       ? "Tata Consumer Products"
-      : "Enterprise Client";
+      : clientMatch
+      ? clientMatch[1].trim()
+      : trimmedClient || "Enterprise Client";
 
   // Extract budget
   let budget = input.budget || "";
@@ -314,7 +161,7 @@ export function extractCampaignMetadata(input: {
   // Extract volume
   let codeVolume = input.codeVolume || "";
   if (!codeVolume || codeVolume === "0 packs" || codeVolume === "250,000 packs") {
-    const vMatch = text.match(/([\d,]+\s*(?:packs?|codes?|cans?|bottles?|units?|on-pack\s*QR\s*codes?|vouchers?))/i);
+    const vMatch = text.match(/([\d,]+\s*(?:packs?|codes?|cans?|bottles?|units?|on-pack\s*QR\s*codes?|vouchers?|shoeboxes?))/i);
     if (vMatch) {
       codeVolume = vMatch[1];
     } else {
@@ -324,14 +171,16 @@ export function extractCampaignMetadata(input: {
 
   // Extract reward type & partner
   const isVoucher = /amazon\s*pay|swiggy|zomato|voucher|egv|myntra|flipkart|gift\s*card|dining/i.test(text);
-  const isCashback = /cashback|upi|paytm|wallet|instant\s*cash/i.test(text);
+  const isCashback = /cashback|upi|phonepe|paytm|gpay|google\s*pay|wallet|instant\s*cash/i.test(text);
   const isScratch = /scratch|gold\s*coin|mega\s*draw/i.test(text);
 
   const rewardType = (input.rewardType ||
     (isVoucher ? "EGV" : isCashback ? "Cashback" : isScratch ? "Scratch & Win" : "Cashback")) as Campaign["rewardType"];
 
   let partner = "NPCI / Razorpay / UPI";
-  if (/amazon\s*pay/i.test(text)) partner = "Amazon Pay";
+  if (/phonepe/i.test(text)) partner = "PhonePe";
+  else if (/google\s*pay|gpay/i.test(text)) partner = "Google Pay";
+  else if (/amazon\s*pay/i.test(text)) partner = "Amazon Pay";
   else if (/swiggy/i.test(text)) partner = "Swiggy";
   else if (/zomato/i.test(text)) partner = "Zomato";
   else if (/myntra/i.test(text)) partner = "Myntra";
@@ -339,11 +188,11 @@ export function extractCampaignMetadata(input: {
   else if (/paytm/i.test(text)) partner = "Paytm Wallet";
 
   const category = (input.category ||
-    (/beverage|coke|pepsi|drink/i.test(text)
+    (/amul|beverage|coke|pepsi|drink|dairy|kool/i.test(text)
       ? "Beverages"
       : /samsung|phone|electronic/i.test(text)
       ? "Electronics"
-      : /retail|myntra|store/i.test(text)
+      : /puma|retail|myntra|store|shoe/i.test(text)
       ? "Retail"
       : /bfsi|bank|insurance/i.test(text)
       ? "BFSI"
@@ -643,6 +492,7 @@ export async function generateAIAspectPlan(campaignInput: {
   client?: string;
   category?: string;
   rewardType?: string;
+  partner?: string;
   budget?: string;
   codeVolume?: string;
   startDate?: string;
@@ -805,18 +655,19 @@ export function generateAspectPlan(campaignInput: {
 }
 
 // ---------------------------------------------------------------------------
-// Zoho CRM Deal Sync Helper
+// Zoho CRM/Books/Projects Sync Helper
 // ---------------------------------------------------------------------------
 async function syncCampaignToZohoCRM(
+  campaignId: string | null,
   campaignName: string,
   client: string,
   budget: string,
   codeVolume: string,
   tasks: AspectTask[]
-): Promise<{ dealId: string | null; dealUrl: string | null; writeStatus: string }> {
+): Promise<{ dealId: string | null; dealUrl: string | null; invoiceId: string | null; invoiceUrl: string | null; projectId: string | null; projectUrl: string | null; writeStatus: string }> {
   const N8N_ZOHO_SYNC_WEBHOOK =
     process.env.N8N_ZOHO_SYNC_WEBHOOK ||
-    "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-task-ingest";
+    "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-task-ingest-v2";
 
   const taskSummary = tasks
     .map((t, i) => `${i + 1}. [${t.aspect.toUpperCase()}] ${t.title} — Owner: ${t.assignee}, TAT: ${t.tat}, Urgency: ${t.urgency}`)
@@ -834,13 +685,22 @@ async function syncCampaignToZohoCRM(
     const res = await fetch(N8N_ZOHO_SYNC_WEBHOOK, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, campaignName, client, budget, codeVolume }),
+      body: JSON.stringify({
+        message,
+        campaignId,
+        campaignName,
+        client,
+        budget,
+        codeVolume,
+        is_approved_by_manager: true,
+        tasks,
+      }),
       signal: AbortSignal.timeout(12000),
     });
 
     if (!res.ok) {
       console.error(`[ZohoCRM] n8n webhook returned ${res.status}`);
-      return { dealId: null, dealUrl: null, writeStatus: `WEBHOOK_ERROR_${res.status}` };
+      return { dealId: null, dealUrl: null, invoiceId: null, invoiceUrl: null, projectId: null, projectUrl: null, writeStatus: `WEBHOOK_ERROR_${res.status}` };
     }
 
     const body = (await res.json().catch(() => ({}))) as Record<string, any>;
@@ -851,16 +711,25 @@ async function syncCampaignToZohoCRM(
       body?.deal?.id ||
       null;
 
+    const invoiceId: string | null = body?.invoice_id || body?.invoiceId || null;
+    const projectId: string | null = body?.project_id || body?.projectId || null;
+
     const dealUrl = dealId ? `https://crm.zoho.in/crm/org/tab/Potentials/${dealId}` : null;
+    const invoiceUrl = invoiceId ? `https://books.zoho.in/app#/invoices/${invoiceId}` : null;
+    const projectUrl = projectId ? `https://projects.zoho.in/portal/enlightlabdotcom#project/${projectId}` : null;
 
     return {
       dealId,
       dealUrl,
+      invoiceId,
+      invoiceUrl,
+      projectId,
+      projectUrl,
       writeStatus: dealId ? "SYNCED" : "CREATED_NO_ID",
     };
   } catch (err: any) {
     console.error("[ZohoCRM] Sync failed:", err.message);
-    return { dealId: null, dealUrl: null, writeStatus: "FAILED" };
+    return { dealId: null, dealUrl: null, invoiceId: null, invoiceUrl: null, projectId: null, projectUrl: null, writeStatus: "FAILED" };
   }
 }
 
@@ -889,7 +758,7 @@ function rowToCampaign(row: any): Campaign {
     zohoProjectUrl: row.zoho_project_url,
     zohoBooksInvoiceId: row.zoho_books_invoice_id,
     zohoBooksInvoiceUrl: row.zoho_books_invoice_url,
-    zohoSyncStatus: row.zoho_sync_status || "Pending",
+    zohoSyncStatus: row.zoho_sync_status ? row.zoho_sync_status.charAt(0).toUpperCase() + row.zoho_sync_status.slice(1) : "Pending",
     lastZohoSync: row.last_zoho_sync
       ? new Date(row.last_zoho_sync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
       : undefined,
@@ -908,6 +777,168 @@ function rowToCampaign(row: any): Campaign {
 }
 
 // ---------------------------------------------------------------------------
+// Reconcile Zoho CRM with Supabase (Single source of truth)
+// ---------------------------------------------------------------------------
+export async function reconcileZohoCRMWithSupabase(): Promise<{
+  campaigns: Campaign[];
+  validated: number;
+  deleted: number;
+  updated: number;
+  reset: number;
+}> {
+  const N8N_ZOHO_SYNC_WEBHOOK =
+    process.env.N8N_ZOHO_SYNC_WEBHOOK ||
+    "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-task-ingest-v2";
+
+  try {
+    const listRes = await fetch(N8N_ZOHO_SYNC_WEBHOOK, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "list_deals" }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (listRes.ok) {
+      const listData = (await listRes.json().catch(() => ({}))) as Record<string, any>;
+      const liveDeals: Array<{ id: string; name: string; stage?: string; amount?: number }> =
+        Array.isArray(listData?.deals) ? listData.deals : [];
+      const liveDealIds = new Set(
+        (Array.isArray(listData?.dealIds) ? listData.dealIds : liveDeals.map((d) => d.id)).map(String)
+      );
+      const liveDealMap = new Map(liveDeals.map((d) => [String(d.id), d]));
+
+      const { data: allCampaigns } = await supabase.from("campaigns").select("*");
+      const existing = allCampaigns || [];
+
+      let deletedCount = 0;
+      let updatedCount = 0;
+      const claimedDealIds = new Set<string>();
+
+      for (const camp of existing) {
+        const dealIdStr = camp.zoho_crm_deal_id ? String(camp.zoho_crm_deal_id) : "";
+        if (dealIdStr) {
+          if (!liveDealIds.has(dealIdStr)) {
+            // Deal was DELETED in Zoho CRM — cascade cleanup in Projects and Books
+            console.log(`[reconcile] Zoho deal ${dealIdStr} was deleted in CRM. Cleaning up Projects, Books & Supabase for ${camp.name} (${camp.id})`);
+            const N8N_ZOHO_DELETE_WEBHOOK =
+              process.env.N8N_ZOHO_DELETE_WEBHOOK ||
+              "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-delete-resources";
+            await fetch(N8N_ZOHO_DELETE_WEBHOOK, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                dealId: dealIdStr,
+                projectId: camp.zoho_project_id,
+                invoiceId: camp.zoho_books_invoice_id,
+                campaignName: camp.name,
+              }),
+              signal: AbortSignal.timeout(8000),
+            }).catch(() => {});
+            await supabase.from("campaigns").delete().eq("id", camp.id);
+            deletedCount++;
+          } else {
+            claimedDealIds.add(dealIdStr);
+            const live = liveDealMap.get(dealIdStr);
+            const updates: Record<string, any> = {
+              zoho_sync_status: "synced",
+              last_zoho_sync: new Date().toISOString(),
+            };
+            if (live?.name && live.name !== camp.name) {
+              updates.name = live.name;
+            }
+            if (live?.stage && live.stage !== camp.zoho_crm_deal_stage) {
+              updates.zoho_crm_deal_stage = live.stage;
+            }
+            await supabase.from("campaigns").update(updates).eq("id", camp.id);
+            updatedCount++;
+          }
+        } else {
+          // Campaign has no deal ID — check if any unclaimed live deal matches by name
+          const match = liveDeals.find(
+            (d) => !claimedDealIds.has(String(d.id)) && d.name && d.name.trim().toLowerCase() === camp.name.trim().toLowerCase()
+          );
+          if (match) {
+            claimedDealIds.add(String(match.id));
+            await supabase
+              .from("campaigns")
+              .update({
+                zoho_crm_deal_id: String(match.id),
+                zoho_crm_deal_url: `https://crm.zoho.in/crm/org/tab/Potentials/${match.id}`,
+                zoho_crm_deal_stage: match.stage || "Qualification",
+                zoho_sync_status: "synced",
+                last_zoho_sync: new Date().toISOString(),
+              })
+              .eq("id", camp.id);
+            updatedCount++;
+          }
+        }
+      }
+
+      // Import any deals present in Zoho CRM that don't exist in Supabase at all
+      for (const liveDeal of liveDeals) {
+        const dealIdStr = String(liveDeal.id);
+        if (!claimedDealIds.has(dealIdStr)) {
+          const now = new Date().toISOString();
+          const bespoke = generateDynamicBespokePlan({
+            name: liveDeal.name || "Zoho Campaign Deal",
+            client: "Enterprise Client",
+          });
+          await supabase.from("campaigns").insert({
+            name: liveDeal.name || "Zoho Campaign Deal",
+            client: "Enterprise Client",
+            category: "FMCG",
+            reward_type: "Cashback",
+            budget: liveDeal.amount ? `₹${liveDeal.amount.toLocaleString("en-IN")}` : "₹25,00,000",
+            code_volume: "250,000 packs",
+            start_date: now.split("T")[0],
+            end_date: new Date(Date.now() + 90 * 86400000).toISOString().split("T")[0],
+            brief: `Live campaign imported directly from Zoho CRM Deal ${dealIdStr}.`,
+            status: "live",
+            tasks: bespoke.tasks,
+            aspect_summary: bespoke.aspectSummary,
+            zoho_crm_deal_id: dealIdStr,
+            zoho_crm_deal_url: `https://crm.zoho.in/crm/org/tab/Potentials/${dealIdStr}`,
+            zoho_crm_deal_stage: liveDeal.stage || "Qualification",
+            zoho_sync_status: "synced",
+            last_zoho_sync: now,
+            approved_at: now,
+            approved_by: "Zoho CRM Sync",
+          });
+        }
+      }
+
+      const { data: refreshedRows } = await supabase
+        .from("campaigns")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      return {
+        campaigns: (refreshedRows || []).map(rowToCampaign),
+        validated: liveDeals.length,
+        deleted: deletedCount,
+        updated: updatedCount,
+        reset: deletedCount,
+      };
+    }
+  } catch (err: any) {
+    console.warn("[reconcileZohoCRMWithSupabase] Live Zoho list failed:", err.message);
+  }
+
+  const { data: fallbackRows } = await supabase
+    .from("campaigns")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  return {
+    campaigns: (fallbackRows || []).map(rowToCampaign),
+    validated: 0,
+    deleted: 0,
+    updated: 0,
+    reset: 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // GET handler
 // ---------------------------------------------------------------------------
 export async function GET(request: NextRequest) {
@@ -915,6 +946,12 @@ export async function GET(request: NextRequest) {
   const action = searchParams.get("action");
   const id = searchParams.get("id");
   const name = searchParams.get("name");
+  const sync = searchParams.get("sync");
+
+  if (sync === "true") {
+    const syncResult = await reconcileZohoCRMWithSupabase();
+    return NextResponse.json({ campaigns: syncResult.campaigns, validated: syncResult.validated });
+  }
 
   if (action === "check_approved" && name) {
     const { data, error } = await supabase
@@ -935,17 +972,14 @@ export async function GET(request: NextRequest) {
 
   if (action === "get_campaign" && id) {
     const { data } = await supabase.from("campaigns").select("*").eq("id", id).maybeSingle();
-    if (data) return NextResponse.json({ campaign: rowToCampaign(data) });
-
-    const seed = INITIAL_CAMPAIGNS.find((c) => c.id === id);
-    if (!seed) return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
-    return NextResponse.json({ campaign: seed });
+    if (!data) return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
+    return NextResponse.json({ campaign: rowToCampaign(data) });
   }
 
   if (action === "read_zoho_tasks" && id) {
     const { data } = await supabase.from("campaigns").select("*").eq("id", id).maybeSingle();
-    const campaign = data ? rowToCampaign(data) : INITIAL_CAMPAIGNS.find((c) => c.id === id);
-    if (!campaign) return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
+    if (!data) return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
+    const campaign = rowToCampaign(data);
 
     return NextResponse.json({
       zohoCrmDealId: campaign.zohoCrmDealId || "N/A",
@@ -961,7 +995,6 @@ export async function GET(request: NextRequest) {
         closedTasks: campaign.tasks.filter((t) => t.status === "COMPLETED").length,
         inProgressTasks: campaign.tasks.filter((t) => t.status === "IN_PROGRESS").length,
         pendingApproval: campaign.tasks.filter((t) => t.status.includes("PENDING")).length,
-        readLatencyMs: Math.floor(28 + Math.random() * 25),
       },
     });
   }
@@ -973,16 +1006,10 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     console.error("[GET campaigns] Supabase error:", error);
-    return NextResponse.json({ campaigns: INITIAL_CAMPAIGNS });
+    return NextResponse.json({ campaigns: [] });
   }
 
-  const supabaseIds = new Set((supabaseRows || []).map((r) => r.name));
-  const seedsNotInSupabase = INITIAL_CAMPAIGNS.filter((c) => !supabaseIds.has(c.name));
-  const allCampaigns = [
-    ...(supabaseRows || []).map(rowToCampaign),
-    ...seedsNotInSupabase,
-  ];
-
+  const allCampaigns = (supabaseRows || []).map(rowToCampaign);
   return NextResponse.json({ campaigns: allCampaigns });
 }
 
@@ -1031,19 +1058,11 @@ export async function POST(request: NextRequest) {
     // ── Action 2: Approve & sync campaign to Zoho CRM ──
     if (action === "approve_and_push_zoho") {
       const { campaignData, tasks } = body;
-
-      const { dealId, dealUrl, writeStatus } = await syncCampaignToZohoCRM(
-        campaignData.name,
-        campaignData.client,
-        campaignData.budget,
-        campaignData.codeVolume,
-        tasks
-      );
-
       const now = new Date().toISOString();
       const resolvedTasks =
         tasks && tasks.length > 0 ? tasks : generateDynamicBespokePlan(campaignData).tasks;
 
+      // 1. Insert into Supabase first so persistent campaignId is available for Zoho webhook
       const { data: insertedRow, error: insertError } = await supabase
         .from("campaigns")
         .insert({
@@ -1064,15 +1083,15 @@ export async function POST(request: NextRequest) {
             accounting: { total: 3, done: 2, status: "In Review" },
             implementation: { total: 4, done: 0, status: "In Review" },
           },
-          zoho_crm_deal_id: dealId,
-          zoho_crm_deal_url: dealUrl,
+          zoho_crm_deal_id: null,
+          zoho_crm_deal_url: null,
           zoho_crm_deal_stage: "Qualification",
           zoho_project_id: null,
           zoho_project_url: null,
           zoho_books_invoice_id: null,
           zoho_books_invoice_url: null,
-          zoho_sync_status: dealId ? "partial" : "pending",
-          last_zoho_sync: dealId ? now : null,
+          zoho_sync_status: "pending",
+          last_zoho_sync: null,
           approved_at: now,
           approved_by: "Rohit Sharma (Admin)",
         })
@@ -1081,6 +1100,76 @@ export async function POST(request: NextRequest) {
 
       if (insertError) {
         console.error("[approve_and_push_zoho] Supabase insert error:", insertError);
+      }
+
+      const campaignId = insertedRow?.id || null;
+
+      // 2. Call Zoho CRM sync with the real campaignId on the first attempt
+      const { dealId, dealUrl, invoiceId, invoiceUrl, projectId, projectUrl, writeStatus } = await syncCampaignToZohoCRM(
+        campaignId,
+        campaignData.name,
+        campaignData.client,
+        campaignData.budget,
+        campaignData.codeVolume,
+        resolvedTasks
+      );
+
+      // 3. Update the Supabase record with the returned Deal ID and mark as synced
+      if (dealId && insertedRow?.id) {
+        const updatePayload: Record<string, any> = {
+            zoho_crm_deal_id: dealId,
+            zoho_crm_deal_url: dealUrl,
+            zoho_crm_deal_stage: "Qualification",
+            zoho_sync_status: "synced",
+            last_zoho_sync: now,
+        };
+        if (invoiceId) {
+          updatePayload.zoho_books_invoice_id = invoiceId;
+          updatePayload.zoho_books_invoice_url = invoiceUrl;
+        }
+        if (projectId) {
+          updatePayload.zoho_project_id = projectId;
+          updatePayload.zoho_project_url = projectUrl;
+        }
+
+        await supabase
+          .from("campaigns")
+          .update(updatePayload)
+          .eq("id", insertedRow.id);
+
+        insertedRow.zoho_crm_deal_id = dealId;
+        insertedRow.zoho_crm_deal_url = dealUrl;
+        insertedRow.zoho_crm_deal_stage = "Qualification";
+        insertedRow.zoho_sync_status = "synced";
+        insertedRow.last_zoho_sync = now;
+        if (invoiceId) {
+          insertedRow.zoho_books_invoice_id = invoiceId;
+          insertedRow.zoho_books_invoice_url = invoiceUrl;
+        }
+        if (projectId) {
+          insertedRow.zoho_project_id = projectId;
+          insertedRow.zoho_project_url = projectUrl;
+        }
+      }
+
+      // 4. Fallback: if initial webhook didn't return dealId, fire background re-sync with campaignId
+      if (!dealId && insertedRow?.id) {
+        const N8N_ZOHO_SYNC_WEBHOOK =
+          process.env.N8N_ZOHO_SYNC_WEBHOOK ||
+          "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-task-ingest-v2";
+        fetch(N8N_ZOHO_SYNC_WEBHOOK, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            campaignId: insertedRow.id,
+            campaignName: campaignData.name,
+            client: campaignData.client,
+            budget: campaignData.budget,
+            codeVolume: campaignData.codeVolume,
+            is_approved_by_manager: true,
+            tasks: resolvedTasks,
+          }),
+        }).catch((err) => console.warn("[approve_and_push_zoho] Re-fire webhook failed:", err));
       }
 
       const savedCampaign: Campaign = insertedRow
@@ -1131,15 +1220,27 @@ export async function POST(request: NextRequest) {
           },
           projects: {
             product: "Zoho Projects",
-            status: "NOT_YET_INTEGRATED",
-            note: "Zoho Projects integration is in the next phase.",
+            projectId: projectId || null,
+            projectUrl: projectUrl || null,
+            status: projectId ? "SYNCED" : dealId ? "INITIATED" : "PENDING",
+            note: projectId
+              ? `Project created: ${projectId}`
+              : dealId
+              ? "n8n workflow triggered — awaiting Zoho Projects confirmation"
+              : "Awaiting Zoho CRM deal creation",
           },
           books: {
             product: "Zoho Books",
-            status: "NOT_YET_INTEGRATED",
-            note: "Zoho Books invoice must be raised manually by Finance.",
+            invoiceId: invoiceId || null,
+            invoiceUrl: invoiceUrl || null,
+            status: invoiceId ? "SYNCED" : dealId ? "INITIATED" : "PENDING",
+            note: invoiceId
+              ? `Invoice created: ${invoiceId}`
+              : dealId
+              ? "n8n workflow triggered — awaiting Zoho Books confirmation"
+              : "Awaiting Zoho CRM deal creation",
           },
-          overallSyncStatus: dealId ? "PARTIAL" : "PENDING",
+          overallSyncStatus: dealId ? "SYNCED" : "PENDING",
           syncedAt: dealId ? now : null,
         },
       });
@@ -1147,19 +1248,23 @@ export async function POST(request: NextRequest) {
 
     // ── Action 3: Update a task status ──
     if (action === "update_zoho_task") {
-      const { campaignId, taskId, newStatus } = body;
+      const { campaignId, campaignName, taskId, newStatus } = body;
 
-      const { data, error } = await supabase
-        .from("campaigns")
-        .select("tasks")
-        .eq("id", campaignId)
-        .single();
+      let campaignRow: any = null;
+      if (campaignId) {
+        const { data } = await supabase.from("campaigns").select("id, tasks").eq("id", campaignId).maybeSingle();
+        campaignRow = data;
+      }
+      if (!campaignRow && campaignName) {
+        const { data } = await supabase.from("campaigns").select("id, tasks").eq("name", campaignName).maybeSingle();
+        campaignRow = data;
+      }
 
-      if (error || !data) {
+      if (!campaignRow) {
         return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
       }
 
-      const tasks: AspectTask[] = data.tasks || [];
+      const tasks: AspectTask[] = campaignRow.tasks || [];
       const task = tasks.find((t) => t.id === taskId);
       if (!task) return NextResponse.json({ error: "Task not found" }, { status: 404 });
 
@@ -1176,7 +1281,25 @@ export async function POST(request: NextRequest) {
           tasks,
           last_zoho_sync: new Date().toISOString(),
         })
-        .eq("id", campaignId);
+        .eq("id", campaignRow.id);
+
+      // Trigger webhook for task update
+      try {
+        const N8N_ZOHO_TASK_UPDATE_WEBHOOK = process.env.N8N_ZOHO_TASK_UPDATE_WEBHOOK || "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-task-update";
+        await fetch(N8N_ZOHO_TASK_UPDATE_WEBHOOK, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            campaignId: campaignRow.id,
+            taskId,
+            newStatus,
+            zohoCrmTaskId: task.zohoCrmTaskId
+          }),
+          signal: AbortSignal.timeout(5000),
+        });
+      } catch (err) {
+        console.warn("[update_zoho_task] Webhook failed:", err);
+      }
 
       return NextResponse.json({
         success: true,
@@ -1190,6 +1313,136 @@ export async function POST(request: NextRequest) {
           timestamp: new Date().toISOString(),
         },
       });
+    }
+
+    // ── Action 4: Batch update tasks for approved campaign + re-fire Zoho sync if pending ──
+    if (action === "update_campaign_tasks") {
+      const { campaignId, campaignName, tasks } = body;
+      const now = new Date().toISOString();
+
+      let resolvedCampaignId = campaignId;
+      let resolvedCampaignName = campaignName;
+      let resolvedClient = "";
+      let resolvedBudget = "";
+      let resolvedCodeVolume = "";
+
+      if (campaignId) {
+        const { data: row } = await supabase.from("campaigns").select("*").eq("id", campaignId).maybeSingle();
+        if (row) {
+          resolvedCampaignName = row.name;
+          resolvedClient = row.client || "";
+          resolvedBudget = row.budget || "";
+          resolvedCodeVolume = row.code_volume || "";
+        }
+        await supabase.from("campaigns").update({ tasks, last_zoho_sync: now }).eq("id", campaignId);
+      } else if (campaignName) {
+        const { data: row } = await supabase.from("campaigns").select("*").eq("name", campaignName).maybeSingle();
+        if (row) {
+          resolvedCampaignId = row.id;
+          resolvedClient = row.client || "";
+          resolvedBudget = row.budget || "";
+          resolvedCodeVolume = row.code_volume || "";
+        }
+        await supabase.from("campaigns").update({ tasks, last_zoho_sync: now }).eq("name", campaignName);
+      }
+
+      // If campaign is pending Zoho sync, re-fire the n8n webhook with campaignId
+      if (resolvedCampaignId && resolvedCampaignName) {
+        try {
+          // Check if campaign still has no deal ID
+          const { data: checkRow } = await supabase
+            .from("campaigns")
+            .select("zoho_crm_deal_id")
+            .eq("id", resolvedCampaignId)
+            .maybeSingle();
+
+          if (!checkRow?.zoho_crm_deal_id) {
+            const N8N_ZOHO_SYNC_WEBHOOK =
+              process.env.N8N_ZOHO_SYNC_WEBHOOK ||
+              "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-task-ingest-v2";
+            try {
+              const syncRes = await fetch(N8N_ZOHO_SYNC_WEBHOOK, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  campaignId: resolvedCampaignId,
+                  campaignName: resolvedCampaignName,
+                  client: resolvedClient,
+                  budget: resolvedBudget,
+                  codeVolume: resolvedCodeVolume,
+                  is_approved_by_manager: true,
+                  tasks: tasks || [],
+                }),
+                signal: AbortSignal.timeout(15000),
+              });
+              if (syncRes.ok) {
+                const syncData = (await syncRes.json().catch(() => ({}))) as Record<string, any>;
+                const dealId = syncData?.id || syncData?.deal_id;
+                if (dealId) {
+                  await supabase
+                    .from("campaigns")
+                    .update({
+                      zoho_crm_deal_id: String(dealId),
+                      zoho_crm_deal_url: `https://crm.zoho.in/crm/org/tab/Potentials/${dealId}`,
+                      zoho_crm_deal_stage: "Qualification",
+                      zoho_books_invoice_id: syncData.invoice_id || null,
+                      zoho_books_invoice_url: syncData.invoice_id ? `https://books.zoho.in/app#/invoices/${syncData.invoice_id}` : null,
+                      zoho_project_id: syncData.project_id || null,
+                      zoho_project_url: syncData.project_id ? `https://projects.zoho.in/portal/enlightlabdotcom#project/${syncData.project_id}` : null,
+                      zoho_sync_status: "synced",
+                      last_zoho_sync: new Date().toISOString(),
+                    })
+                    .eq("id", resolvedCampaignId);
+                }
+              }
+            } catch (err) {
+              console.warn("[update_campaign_tasks] Zoho re-sync failed:", err);
+            }
+          }
+        } catch (err) {
+          console.warn("[update_campaign_tasks] Zoho re-sync check failed:", err);
+        }
+      }
+
+      return NextResponse.json({ success: true, syncedAt: now });
+    }
+
+
+    // ── Action 5: Validate Zoho deal IDs exist and sync ──
+    if (action === "validate_and_sync") {
+      const syncResult = await reconcileZohoCRMWithSupabase();
+      return NextResponse.json(syncResult);
+    }
+
+    // ── Action 6: Delete campaign across Zoho & Supabase ──
+    if (action === "delete_campaign") {
+      const { campaignId } = body;
+      if (!campaignId) return NextResponse.json({ error: "campaignId required" }, { status: 400 });
+
+      const { data: camp } = await supabase.from("campaigns").select("*").eq("id", campaignId).maybeSingle();
+      if (camp) {
+        const N8N_ZOHO_DELETE_WEBHOOK =
+          process.env.N8N_ZOHO_DELETE_WEBHOOK ||
+          "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-delete-resources";
+
+        console.log(`[delete_campaign] Wiping Zoho resources for ${camp.name}: deal=${camp.zoho_crm_deal_id}, project=${camp.zoho_project_id}, invoice=${camp.zoho_books_invoice_id}`);
+        await fetch(N8N_ZOHO_DELETE_WEBHOOK, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            dealId: camp.zoho_crm_deal_id,
+            projectId: camp.zoho_project_id,
+            invoiceId: camp.zoho_books_invoice_id,
+            campaignName: camp.name,
+          }),
+          signal: AbortSignal.timeout(10000),
+        }).catch((err) => console.error("Error in delete webhook:", err));
+
+        await supabase.from("campaigns").delete().eq("id", campaignId);
+        return NextResponse.json({ success: true, deletedName: camp.name });
+      }
+
+      return NextResponse.json({ success: true });
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
