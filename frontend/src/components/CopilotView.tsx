@@ -48,6 +48,7 @@ interface Session {
 }
 
 interface WorkingPlanState {
+  campaignId?: string;
   campaignData: PlanContextForCopilot["campaignData"];
   tasks: AspectTask[];
   aspectSummary: any;
@@ -60,6 +61,7 @@ interface WorkingPlanState {
   zohoProjectUrl?: string;
   // Zoho Books — invoice / advance payment (future integration)
   zohoBooksInvoiceId?: string;
+  zohoBooksInvoiceUrl?: string;
   // Aggregate sync status across all Zoho products
   zohoSyncStatus?: "Pending" | "Partial" | "Synced" | "Failed";
   lastUpdatedAspect?: string;
@@ -588,29 +590,110 @@ export default function CopilotView({
               `✨ AI generated ${intentData.plan.tasks.length} bespoke tasks for ${intentData.campaignData.name}`,
               "sparkle"
             );
-          } else if (intentData.intent === "PLAN_MODIFY" && workingPlan) {
-            const modResult = applyPlanModifications(
-              workingPlan.tasks,
-              workingPlan.campaignData,
-              content
-            );
+          } else if (
+            (intentData.intent === "PLAN_MODIFY" && workingPlan) ||
+            ((content.toLowerCase().includes("change") ||
+              content.toLowerCase().includes("rename") ||
+              content.toLowerCase().includes("set") ||
+              content.toLowerCase().includes("update")) &&
+              (content.toLowerCase().includes("budget") ||
+                content.toLowerCase().includes("invoice") ||
+                content.toLowerCase().includes("amount") ||
+                content.toLowerCase().includes("name")))
+          ) {
+            let targetPlan = workingPlan;
 
-            if (modResult.hasModifications) {
-              planModified = true;
-              modificationSummary = modResult.summaryMarkdown;
+            // If no active workingPlan in studio, find the matching campaign from Supabase
+            if (!targetPlan) {
+              try {
+                const campRes = await fetch("/api/campaigns");
+                if (campRes.ok) {
+                  const campData = await campRes.json();
+                  const campaigns: Campaign[] = campData.campaigns || [];
+                  const matched =
+                    campaigns.find(
+                      (c) =>
+                        content.toLowerCase().includes(c.name.toLowerCase()) ||
+                        content.toLowerCase().includes(c.client.toLowerCase()) ||
+                        (c.name.split(" ")[0] && content.toLowerCase().includes(c.name.split(" ")[0].toLowerCase()))
+                    ) || campaigns[0];
 
-              const updatedPlan: WorkingPlanState = {
-                ...workingPlan,
-                tasks: modResult.updatedTasks,
-                campaignData: modResult.updatedCampaignData,
-              };
-              activePlan = updatedPlan;
-              setWorkingPlan(updatedPlan);
+                  if (matched) {
+                    targetPlan = {
+                      campaignId: matched.id,
+                      campaignData: {
+                        name: matched.name,
+                        client: matched.client,
+                        rewardType: matched.rewardType,
+                        budget: matched.budget,
+                        codeVolume: matched.codeVolume,
+                        startDate: matched.startDate,
+                        endDate: matched.endDate,
+                        brief: matched.brief,
+                      },
+                      tasks: matched.tasks || [],
+                      aspectSummary: matched.aspectSummary,
+                      status: "live",
+                      zohoCrmDealId: matched.zohoCrmDealId,
+                      zohoCrmDealUrl: matched.zohoCrmDealUrl,
+                      zohoProjectId: matched.zohoProjectId,
+                      zohoProjectUrl: matched.zohoProjectUrl,
+                      zohoBooksInvoiceId: matched.zohoBooksInvoiceId,
+                      zohoBooksInvoiceUrl: matched.zohoBooksInvoiceUrl,
+                      zohoSyncStatus: matched.zohoSyncStatus,
+                    };
+                  }
+                }
+              } catch (e) {
+                console.warn("Failed to find campaign for chat modification:", e);
+              }
+            }
 
-              setIsPlanPanelOpen(true);
-              setHighlightedTaskIds(modResult.modifiedTaskIds);
-              setTimeout(() => setHighlightedTaskIds([]), 6000);
-              showToast(`✨ Updated ${modResult.modifiedTaskIds.length} tasks — panel opened`, "sparkle");
+            if (targetPlan) {
+              const modResult = applyPlanModifications(
+                targetPlan.tasks,
+                targetPlan.campaignData,
+                content
+              );
+
+              if (modResult.hasModifications) {
+                planModified = true;
+                modificationSummary = modResult.summaryMarkdown;
+
+                const updatedPlan: WorkingPlanState = {
+                  ...targetPlan,
+                  tasks: modResult.updatedTasks,
+                  campaignData: modResult.updatedCampaignData,
+                };
+                activePlan = updatedPlan;
+                setWorkingPlan(updatedPlan);
+
+                if (targetPlan.status === "live" || targetPlan.zohoCrmDealId) {
+                  fetch("/api/campaigns", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      action: "update_live_campaign",
+                      campaignId: targetPlan.campaignId,
+                      dealId: targetPlan.zohoCrmDealId,
+                      projectId: targetPlan.zohoProjectId,
+                      invoiceId: targetPlan.zohoBooksInvoiceId,
+                      newName: modResult.updatedCampaignData.name,
+                      newBudget: modResult.updatedCampaignData.budget,
+                      newVolume: modResult.updatedCampaignData.codeVolume,
+                    }),
+                  })
+                    .then(() => {
+                      showToast(`✨ Synced updates to Zoho CRM, Books, and Projects!`, "check");
+                    })
+                    .catch((err) => console.warn("Live Zoho update failed:", err));
+                }
+
+                setIsPlanPanelOpen(true);
+                setHighlightedTaskIds(modResult.modifiedTaskIds);
+                setTimeout(() => setHighlightedTaskIds([]), 6000);
+                showToast(`✨ Updated campaign: ${modResult.updatedCampaignData.name}`, "sparkle");
+              }
             }
           }
         }

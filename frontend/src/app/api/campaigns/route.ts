@@ -849,6 +849,12 @@ export async function reconcileZohoCRMWithSupabase(): Promise<{
             if (live?.stage && live.stage !== camp.zoho_crm_deal_stage) {
               updates.zoho_crm_deal_stage = live.stage;
             }
+            if (live?.amount && typeof live.amount === "number") {
+              const formatted = `₹${live.amount.toLocaleString("en-IN")}`;
+              if (formatted !== camp.budget) {
+                updates.budget = formatted;
+              }
+            }
             await supabase.from("campaigns").update(updates).eq("id", camp.id);
             updatedCount++;
           }
@@ -1443,6 +1449,71 @@ export async function POST(request: NextRequest) {
       }
 
       return NextResponse.json({ success: true });
+    }
+
+    // ── Action 5: Update Live Campaign across Zoho CRM, Books, Projects & Supabase ──
+    if (action === "update_live_campaign") {
+      const { campaignId, dealId, projectId, invoiceId, newName, newBudget, newVolume } = body;
+
+      let campRow: any = null;
+      if (campaignId) {
+        const { data } = await supabase.from("campaigns").select("*").eq("id", campaignId).maybeSingle();
+        campRow = data;
+      }
+      if (!campRow && dealId) {
+        const { data } = await supabase.from("campaigns").select("*").eq("zoho_crm_deal_id", dealId).maybeSingle();
+        campRow = data;
+      }
+      if (!campRow && newName) {
+        const { data } = await supabase.from("campaigns").select("*").ilike("name", `%${newName}%`).maybeSingle();
+        campRow = data;
+      }
+
+      const resolvedDealId = dealId || campRow?.zoho_crm_deal_id;
+      const resolvedProjectId = projectId || campRow?.zoho_project_id;
+      const resolvedInvoiceId = invoiceId || campRow?.zoho_books_invoice_id;
+      const resolvedName = newName || campRow?.name;
+      const resolvedBudget = newBudget || campRow?.budget;
+      const numericAmount = parseFloat(String(resolvedBudget || "0").replace(/[^0-9.]/g, "")) || 0;
+
+      const N8N_ZOHO_UPDATE_WEBHOOK =
+        process.env.N8N_ZOHO_UPDATE_WEBHOOK ||
+        "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-update-resources";
+
+      await fetch(N8N_ZOHO_UPDATE_WEBHOOK, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dealId: resolvedDealId,
+          projectId: resolvedProjectId,
+          invoiceId: resolvedInvoiceId,
+          campaignName: resolvedName,
+          amount: numericAmount,
+          budget: resolvedBudget,
+        }),
+        signal: AbortSignal.timeout(10000),
+      }).catch((err) => console.warn("[update_live_campaign] Webhook call failed:", err));
+
+      if (campRow?.id) {
+        const updates: Record<string, any> = {
+          last_zoho_sync: new Date().toISOString(),
+        };
+        if (resolvedName) updates.name = resolvedName;
+        if (resolvedBudget) updates.budget = resolvedBudget;
+        if (newVolume) updates.code_volume = newVolume;
+
+        await supabase.from("campaigns").update(updates).eq("id", campRow.id);
+      }
+
+      return NextResponse.json({
+        success: true,
+        campaignName: resolvedName,
+        budget: resolvedBudget,
+        amount: numericAmount,
+        dealId: resolvedDealId,
+        projectId: resolvedProjectId,
+        invoiceId: resolvedInvoiceId,
+      });
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });

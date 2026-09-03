@@ -23,6 +23,7 @@ import {
   Dot,
   CircleNotch,
   Trash,
+  PencilSimple,
 } from "@phosphor-icons/react";
 import { type Campaign, type AspectTask, generateAspectPlan } from "@/app/api/campaigns/route";
 import ZohoProjectsDrawer from "./ZohoProjectsDrawer";
@@ -227,6 +228,66 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
     },
     [showToast]
   );
+
+  const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editBudget, setEditBudget] = useState("");
+  const [editVolume, setEditVolume] = useState("");
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  const handleOpenEditModal = (camp: Campaign) => {
+    setEditingCampaign(camp);
+    setEditName(camp.name);
+    setEditBudget(camp.budget);
+    setEditVolume(camp.codeVolume);
+  };
+
+  const handleSaveCampaignEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCampaign || !editName.trim()) return;
+    setIsSavingEdit(true);
+    showToast(`Saving updates for "${editName}" across Zoho CRM, Projects & Books...`, "info");
+    try {
+      const res = await fetch("/api/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update_live_campaign",
+          campaignId: editingCampaign.id,
+          dealId: editingCampaign.zohoCrmDealId,
+          projectId: editingCampaign.zohoProjectId,
+          invoiceId: editingCampaign.zohoBooksInvoiceId,
+          newName: editName.trim(),
+          newBudget: editBudget.trim(),
+          newVolume: editVolume.trim(),
+        }),
+      });
+
+      if (res.ok) {
+        setCampaigns((prev) =>
+          prev.map((c) =>
+            c.id === editingCampaign.id
+              ? {
+                  ...c,
+                  name: editName.trim(),
+                  budget: editBudget.trim(),
+                  codeVolume: editVolume.trim(),
+                  lastZohoSync: new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
+                }
+              : c
+          )
+        );
+        showToast(`✨ Updated "${editName}" across Zoho CRM, Projects, and Books!`, "check");
+        setEditingCampaign(null);
+      } else {
+        showToast("Failed to save changes", "info");
+      }
+    } catch {
+      showToast("Network error saving changes", "info");
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
 
   useEffect(() => {
     fetchCampaigns();
@@ -789,6 +850,15 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
 
                       <button
                         type="button"
+                        onClick={() => handleOpenEditModal(camp)}
+                        className="p-2 rounded-xl bg-stone-100 hover:bg-amber-50 text-stone-400 hover:text-amber-600 transition-colors cursor-pointer border border-stone-200 shadow-2xs"
+                        title="Edit campaign & sync across Zoho CRM, Projects, and Books"
+                      >
+                        <PencilSimple size={13} weight="bold" />
+                      </button>
+
+                      <button
+                        type="button"
                         disabled={deletingCampaignId === camp.id}
                         onClick={() => handleDeleteCampaign(camp)}
                         className="p-2 rounded-xl bg-stone-100 hover:bg-rose-50 text-stone-400 hover:text-rose-600 transition-colors cursor-pointer border border-stone-200 shadow-2xs disabled:opacity-50"
@@ -1273,6 +1343,132 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                   </>
                 )}
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* EDIT CAMPAIGN MODAL */}
+      <AnimatePresence>
+        {editingCampaign && (
+          <div key="edit-campaign-modal" className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 sm:p-6">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => !isSavingEdit && setEditingCampaign(null)}
+              className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm"
+            />
+
+            <motion.div
+              initial={{ scale: 0.96, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-stone-200 overflow-hidden z-10"
+            >
+              <div className="px-6 py-4 border-b border-stone-100 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-stone-900">Edit Campaign</h3>
+                  <p className="text-[11px] text-stone-500 mt-0.5">
+                    Syncs changes directly to Zoho CRM, Zoho Projects, and Zoho Books
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => !isSavingEdit && setEditingCampaign(null)}
+                  className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveCampaignEdit}>
+                <div className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-stone-700 mb-1.5">
+                      Campaign Name
+                    </label>
+                    <input
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      required
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-stone-200 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all font-medium text-stone-900"
+                      placeholder="e.g. Cadbury Silk Valentine's Special"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-stone-700 mb-1.5">
+                        Budget / Invoice Total
+                      </label>
+                      <input
+                        type="text"
+                        value={editBudget}
+                        onChange={(e) => setEditBudget(e.target.value)}
+                        required
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-stone-200 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all font-medium text-stone-900"
+                        placeholder="e.g. ₹35,00,000"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-stone-700 mb-1.5">
+                        Code Volume
+                      </label>
+                      <input
+                        type="text"
+                        value={editVolume}
+                        onChange={(e) => setEditVolume(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-stone-200 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all font-medium text-stone-900"
+                        placeholder="e.g. 350,000 packs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-stone-50 rounded-xl border border-stone-200/60 text-[11px] text-stone-600 space-y-1">
+                    <div className="flex items-center gap-1.5 font-medium text-stone-800">
+                      <Lightning size={13} className="text-amber-600" />
+                      <span>Live Multi-App Sync Targets:</span>
+                    </div>
+                    <ul className="list-disc list-inside space-y-0.5 text-stone-500 pl-1">
+                      <li>Zoho CRM Deal: {editingCampaign.zohoCrmDealId ? `ID: ${editingCampaign.zohoCrmDealId}` : "Linked"}</li>
+                      <li>Zoho Projects: {editingCampaign.zohoProjectId ? `ID: ${editingCampaign.zohoProjectId}` : "Linked"}</li>
+                      <li>Zoho Books Invoice: {editingCampaign.zohoBooksInvoiceId ? `ID: ${editingCampaign.zohoBooksInvoiceId}` : "Linked"}</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="px-6 py-3.5 border-t border-stone-100 bg-stone-50/50 flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setEditingCampaign(null)}
+                    disabled={isSavingEdit}
+                    className="px-4 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-100 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingEdit || !editName.trim()}
+                    className="flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white bg-stone-900 hover:bg-amber-700 rounded-xl shadow-sm transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSavingEdit ? (
+                      <>
+                        <ArrowsClockwise size={13} className="animate-spin text-amber-400" />
+                        <span>Syncing to Zoho...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle size={13} weight="fill" className="text-emerald-400" />
+                        <span>Save & Sync Changes</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

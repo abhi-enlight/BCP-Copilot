@@ -714,15 +714,76 @@ export function applyPlanModifications(
     actionType = actionType === "none" ? "add_task" : "multiple";
   }
 
-  // 7. CAMPAIGN LEVEL FIELD MODIFICATIONS: Budget, Volume, Client
-  const isBudgetChange = lower.includes("budget") && (lower.includes("lakh") || lower.includes("cr") || lower.includes("₹") || lower.includes("inr") || lower.includes("change budget to"));
-  if (isBudgetChange) {
-    const budgetMatch = input.match(/(?:₹|inr|rs\.?)?\s*([0-9,.]+)\s*(?:lakhs?|lac|cr|crore|k|m)?/i);
+  // 7. CAMPAIGN LEVEL FIELD MODIFICATIONS: Name, Budget, Invoice Amount, Volume, Client
+  const isNameChange =
+    (lower.includes("rename") ||
+     lower.includes("change name") ||
+     lower.includes("change campaign name") ||
+     lower.includes("set name") ||
+     lower.includes("update name")) &&
+    (lower.includes("to") || lower.includes("as") || lower.includes("="));
+
+  if (isNameChange) {
+    const nameMatch =
+      input.match(/(?:rename(?:\s+campaign)?(?:\s+name)?|change(?:\s+the)?(?:\s+campaign)?\s+name|set(?:\s+the)?(?:\s+campaign)?\s+name|update(?:\s+the)?(?:\s+campaign)?\s+name)\s+(?:of\s+[\w\s\u20b9₹-]+\s+)?(?:to|as|=|is)\s+["']?([^"'\n.]+?)["']?$/i) ||
+      input.match(/(?:rename|change\s+name|update\s+name)\s+(?:to|as)\s+["']?([^"'\n]+?)["']?$/i);
+    if (nameMatch && nameMatch[1]) {
+      const oldName = updatedCampaign.name;
+      const newName = nameMatch[1].trim();
+      if (newName && newName.length >= 3) {
+        updatedCampaign.name = newName;
+        changesSummary.push(`• Renamed Campaign from **"${oldName}"** to **"${newName}"**`);
+        actionType = actionType === "none" ? "update_metadata" : "multiple";
+
+        // Update task descriptions/titles if they reference old name
+        tasks.forEach((t) => {
+          if (oldName && t.title.includes(oldName)) {
+            t.title = t.title.replace(oldName, newName);
+          }
+          if (oldName && t.details && t.details.includes(oldName)) {
+            t.details = t.details.replace(oldName, newName);
+          }
+        });
+      }
+    }
+  }
+
+  const isBudgetOrInvoiceChange =
+    (lower.includes("budget") || lower.includes("invoice") || lower.includes("amount") || lower.includes("escrow")) &&
+    (lower.includes("change") ||
+     lower.includes("set") ||
+     lower.includes("update") ||
+     lower.includes("to") ||
+     lower.includes("make") ||
+     lower.includes("increase") ||
+     lower.includes("decrease") ||
+     lower.includes("lakh") ||
+     lower.includes("cr") ||
+     lower.includes("₹") ||
+     lower.includes("inr"));
+
+  if (isBudgetOrInvoiceChange) {
+    const budgetMatch = input.match(/(?:to|as|=|is|\b)\s*(?:₹|inr|rs\.?)?\s*([0-9,.]+)\s*(lakhs?|lac|cr|crore|k|m)?/i);
     if (budgetMatch) {
-      const newBudget = budgetMatch[0].trim();
-      updatedCampaign.budget = newBudget.startsWith("₹") ? newBudget : `₹${newBudget}`;
-      changesSummary.push(`• Updated Campaign Budget to **${updatedCampaign.budget}**`);
-      actionType = actionType === "none" ? "update_metadata" : "multiple";
+      const numRaw = budgetMatch[1].replace(/,/g, "");
+      const unit = (budgetMatch[2] || "").toLowerCase();
+      let numericVal = parseFloat(numRaw);
+      if (!isNaN(numericVal)) {
+        if (unit.startsWith("lakh") || unit.startsWith("lac")) {
+          numericVal = numericVal * 100000;
+        } else if (unit.startsWith("cr")) {
+          numericVal = numericVal * 10000000;
+        } else if (unit === "k") {
+          numericVal = numericVal * 1000;
+        } else if (unit === "m") {
+          numericVal = numericVal * 1000000;
+        }
+
+        updatedCampaign.budget = `₹${numericVal.toLocaleString("en-IN")}`;
+        updatedCampaign.amount = numericVal;
+        changesSummary.push(`• Updated Campaign Budget & Invoice Amount to **${updatedCampaign.budget}**`);
+        actionType = actionType === "none" ? "update_metadata" : "multiple";
+      }
     }
   }
 
