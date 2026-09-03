@@ -1480,7 +1480,7 @@ export async function POST(request: NextRequest) {
         process.env.N8N_ZOHO_UPDATE_WEBHOOK ||
         "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-update-resources";
 
-      await fetch(N8N_ZOHO_UPDATE_WEBHOOK, {
+      const updateRes = await fetch(N8N_ZOHO_UPDATE_WEBHOOK, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1492,7 +1492,12 @@ export async function POST(request: NextRequest) {
           budget: resolvedBudget,
         }),
         signal: AbortSignal.timeout(10000),
-      }).catch((err) => console.warn("[update_live_campaign] Webhook call failed:", err));
+      }).catch((err) => {
+        console.warn("[update_live_campaign] Webhook call failed:", err);
+        return null;
+      });
+
+      const updateData = updateRes && updateRes.ok ? await updateRes.json().catch(() => ({})) : null;
 
       if (campRow?.id) {
         const updates: Record<string, any> = {
@@ -1513,6 +1518,7 @@ export async function POST(request: NextRequest) {
         dealId: resolvedDealId,
         projectId: resolvedProjectId,
         invoiceId: resolvedInvoiceId,
+        zohoResponse: updateData,
       });
     }
 
