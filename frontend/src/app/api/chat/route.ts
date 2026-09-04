@@ -17,6 +17,9 @@ const SSE_HEADERS = {
 interface ChatRequestBody {
   message: string;
   sessionId?: string;
+  campaignContext?: string;
+  conversationHistory?: { role: "user" | "assistant"; content: string }[];
+  intent?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -59,7 +62,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body: ChatRequestBody = await request.json();
-    const { message, sessionId } = body;
+    const { message, sessionId, campaignContext, conversationHistory, intent } = body;
 
     if (!message || typeof message !== "string") {
       return NextResponse.json({ error: "Message is required" }, { status: 400 });
@@ -85,6 +88,15 @@ export async function POST(request: NextRequest) {
           // Send initial tool indicator for the UI loader
           sendSSE({ toolCall: "BCP Assist AI Agent" });
 
+          const n8nPayload: Record<string, unknown> = {
+            action: "sendMessage",
+            chatInput: message,
+            sessionId: sessionId || `web-${Date.now()}`,
+          };
+          if (campaignContext) n8nPayload.campaignContext = campaignContext;
+          if (conversationHistory && conversationHistory.length > 0) n8nPayload.conversationHistory = conversationHistory;
+          if (intent) n8nPayload.intent = intent;
+
           const n8nRes = await fetch(HOSTINGER_N8N_WEBHOOK, {
             method: "POST",
             headers: {
@@ -93,11 +105,7 @@ export async function POST(request: NextRequest) {
               "ngrok-skip-browser-warning": "69420",
               "Bypass-Tunnel-Reminder": "true",
             },
-            body: JSON.stringify({
-              action: "sendMessage",
-              chatInput: message,
-              sessionId: sessionId || `web-${Date.now()}`,
-            }),
+            body: JSON.stringify(n8nPayload),
             signal: AbortSignal.timeout(60_000),
           });
 

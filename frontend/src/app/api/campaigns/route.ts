@@ -57,6 +57,7 @@ export interface Campaign {
   // Aggregate sync health across all connected Zoho products
   zohoSyncStatus?: "Pending" | "Partial" | "Synced" | "Failed";
   lastZohoSync?: string;
+  booksCustomerId?: string;
 
   brief: string;
   aspectSummary: {
@@ -1995,6 +1996,7 @@ function rowToCampaign(row: any): Campaign {
     lastZohoSync: row.last_zoho_sync
       ? new Date(row.last_zoho_sync).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
       : undefined,
+    booksCustomerId: row.books_customer_id,
     brief: row.brief || "",
     aspectSummary: row.aspect_summary || {
       legal: { total: 0, done: 0, status: "Pending" },
@@ -2055,7 +2057,7 @@ export async function reconcileZohoCRMWithSupabase(): Promise<{
             console.log(`[reconcile] Zoho deal ${dealIdStr} was deleted in CRM. Cleaning up Projects, Books & Supabase for ${camp.name} (${camp.id})`);
             const N8N_ZOHO_DELETE_WEBHOOK =
               process.env.N8N_ZOHO_DELETE_WEBHOOK ||
-              "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-delete-resources";
+              "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-delete-zoho-resources";
             await fetch(N8N_ZOHO_DELETE_WEBHOOK, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -2371,6 +2373,7 @@ export async function POST(request: NextRequest) {
           zoho_project_url: null,
           zoho_books_invoice_id: null,
           zoho_books_invoice_url: null,
+          books_customer_id: booksCustomerId,
           zoho_sync_status: "pending",
           last_zoho_sync: null,
           approved_at: now,
@@ -2413,6 +2416,9 @@ export async function POST(request: NextRequest) {
           updatePayload.zoho_project_id = projectId;
           updatePayload.zoho_project_url = projectUrl;
         }
+        if (booksCustomerId) {
+          updatePayload.books_customer_id = booksCustomerId;
+        }
 
         await supabase
           .from("campaigns")
@@ -2424,6 +2430,9 @@ export async function POST(request: NextRequest) {
         insertedRow.zoho_crm_deal_stage = "Qualification";
         insertedRow.zoho_sync_status = "synced";
         insertedRow.last_zoho_sync = now;
+        if (booksCustomerId) {
+          insertedRow.books_customer_id = booksCustomerId;
+        }
         if (invoiceId) {
           insertedRow.zoho_books_invoice_id = invoiceId;
           insertedRow.zoho_books_invoice_url = invoiceUrl;
@@ -2727,7 +2736,7 @@ export async function POST(request: NextRequest) {
       if (camp) {
         const N8N_ZOHO_DELETE_WEBHOOK =
           process.env.N8N_ZOHO_DELETE_WEBHOOK ||
-          "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-delete-resources";
+          "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-delete-zoho-resources";
 
         console.log(`[delete_campaign] Wiping Zoho resources for ${camp.name}: deal=${camp.zoho_crm_deal_id}, project=${camp.zoho_project_id}, invoice=${camp.zoho_books_invoice_id}`);
         await fetch(N8N_ZOHO_DELETE_WEBHOOK, {

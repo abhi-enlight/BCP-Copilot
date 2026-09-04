@@ -391,8 +391,12 @@ export default function CopilotView({
               zohoCrmDealId: json.campaign.zohoCrmDealId,
               zohoCrmDealUrl: json.campaign.zohoCrmDealUrl,
               zohoProjectId: json.campaign.zohoProjectId,
+              zohoProjectUrl: json.campaign.zohoProjectUrl,
               zohoBooksInvoiceId: json.campaign.zohoBooksInvoiceId,
+              zohoBooksInvoiceUrl: json.campaign.zohoBooksInvoiceUrl,
               zohoSyncStatus: json.campaign.zohoSyncStatus,
+              booksCustomerId: json.campaign.booksCustomerId,
+              campaignId: json.campaign.id,
             });
             showToast("Campaign already approved & synced to Zoho", "check");
             return true;
@@ -457,7 +461,12 @@ export default function CopilotView({
 
   // Handle approve & sync campaign to Zoho CRM (Deal), Zoho Projects, Zoho Books
   const handleApprovePlanToZoho = async (overrideSkipBooksCheck = false, contactIdOverride?: string) => {
-    if (!workingPlan || workingPlan.status === "live") return;
+    if (!workingPlan || workingPlan.status === "live") {
+      setIsLoading(false);
+      setIsThinking(false);
+      setToolCallLabel(null);
+      return;
+    }
 
     const targetBooksId = contactIdOverride || workingPlan.booksCustomerId;
 
@@ -467,6 +476,9 @@ export default function CopilotView({
       !workingPlan.booksContact.exists &&
       !targetBooksId
     ) {
+      setIsLoading(false);
+      setIsThinking(false);
+      setToolCallLabel(null);
       setIsBooksModalOpen(true);
       return;
     }
@@ -545,6 +557,9 @@ export default function CopilotView({
       showToast("Failed to sync to Zoho — check network", "info");
     } finally {
       setIsPushingToZoho(false);
+      setIsLoading(false);
+      setIsThinking(false);
+      setToolCallLabel(null);
     }
   };
 
@@ -751,7 +766,13 @@ export default function CopilotView({
           intent = intentData.intent || "CHAT";
 
           if (intentData.intent === "PLAN_APPROVE") {
+            setIsLoading(false);
+            setIsThinking(false);
+            setToolCallLabel(null);
             await handleApprovePlanToZoho();
+            setIsLoading(false);
+            setIsThinking(false);
+            setToolCallLabel(null);
             return;
           }
 
@@ -842,6 +863,7 @@ export default function CopilotView({
                       zohoBooksInvoiceId: matched.zohoBooksInvoiceId,
                       zohoBooksInvoiceUrl: matched.zohoBooksInvoiceUrl,
                       zohoSyncStatus: matched.zohoSyncStatus,
+                      booksCustomerId: matched.booksCustomerId,
                     };
                   }
                 }
@@ -904,21 +926,35 @@ export default function CopilotView({
 
       let promptToSend = content;
 
-      // Build campaign context string for Gemini direct fallback
+      // Build campaign context string so n8n has the right Zoho IDs to query
       let campaignContextStr: string | undefined;
-      if (activePlan && activePlan.status !== "live") {
+      if (activePlan) {
+        const isLive = activePlan.status === "live";
+        const zohoIds = [
+          activePlan.zohoCrmDealId ? `CRM Deal ID: ${activePlan.zohoCrmDealId}` : null,
+          activePlan.zohoProjectId ? `Projects ID: ${activePlan.zohoProjectId}` : null,
+          activePlan.zohoBooksInvoiceId ? `Books Invoice ID: ${activePlan.zohoBooksInvoiceId}` : null,
+          activePlan.booksCustomerId ? `Books Customer ID: ${activePlan.booksCustomerId}` : null,
+        ]
+          .filter(Boolean)
+          .join("\n");
+
         campaignContextStr =
+          `[${isLive ? "LIVE" : "DRAFT"} Campaign Context]\n` +
           `Campaign: ${activePlan.campaignData.name}\n` +
           `Client: ${activePlan.campaignData.client}\n` +
           `Budget: ${activePlan.campaignData.budget}\n` +
           `Volume: ${activePlan.campaignData.codeVolume}\n` +
-          `Tasks (${activePlan.tasks.length}):\n` +
-          activePlan.tasks
-            .map((t, idx) => `${idx + 1}. [${t.aspect.toUpperCase()}] ${t.title} (Owner: ${t.assignee}, TAT: ${t.tat}, Urgency: ${t.urgency})`)
-            .join("\n");
+          (zohoIds ? `${zohoIds}\n` : "") +
+          (activePlan.tasks.length > 0
+            ? `Tasks (${activePlan.tasks.length}):\n` +
+              activePlan.tasks
+                .map((t, idx) => `${idx + 1}. [${t.aspect.toUpperCase()}] ${t.title} (Owner: ${t.assignee}, TAT: ${t.tat}, Urgency: ${t.urgency})`)
+                .join("\n")
+            : "");
 
         promptToSend =
-          `[Active Working Campaign Context]\n${campaignContextStr}\n\nUser Request: ${content}`;
+          `${campaignContextStr}\n\nUser Request: ${content}`;
       }
 
       // Build last-6-turn history for Gemini direct context
