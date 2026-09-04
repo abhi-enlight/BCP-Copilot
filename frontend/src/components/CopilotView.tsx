@@ -513,8 +513,8 @@ export default function CopilotView({
         const invoiceId = created.zohoBooksInvoiceId || zohoSync?.booksInvoice?.invoiceId;
         showToast(
           crmDealId
-            ? `Approved & synced to Zoho CRM — Deal ${crmDealId}`
-            : `Approved & saved — Zoho CRM sync ${zohoSync?.crmDeal?.writeStatus || "QUEUED"}`,
+            ? "Approved & synced to Zoho"
+            : `Approved & saved — Zoho sync ${zohoSync?.crmDeal?.writeStatus || "QUEUED"}`,
           "check"
         );
 
