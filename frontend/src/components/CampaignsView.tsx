@@ -159,7 +159,40 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
   const handleRetrySync = useCallback(
     async (camp: Campaign) => {
       setRetryingCampaignId(camp.id);
+      // A CRM-synced campaign that is missing its Books invoice / Projects workspace
+      // (status "Partial") is healed in-place — the deal is never duplicated.
+      const missingProducts = Boolean(
+        camp.zohoCrmDealId && (!camp.zohoProjectId || !camp.zohoBooksInvoiceId)
+      );
       try {
+        if (missingProducts) {
+          const res = await fetch("/api/campaigns", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "complete_zoho_sync",
+              campaignId: camp.id,
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data.campaign?.zohoProjectId && data.campaign?.zohoBooksInvoiceId) {
+            showToast(
+              `✅ Zoho sync completed — Project ${data.campaign.zohoProjectId}, Invoice ${data.campaign.zohoBooksInvoiceId}`,
+              "check"
+            );
+            fetchCampaigns();
+          } else if (res.ok && data.campaign) {
+            showToast(
+              "⚠️ Still partial — Zoho Books/Projects did not confirm. Check the n8n Zoho OAuth scopes and retry.",
+              "info"
+            );
+          } else {
+            showToast(data?.message || "Failed to complete Zoho sync", "info");
+          }
+          setRetryingCampaignId(null);
+          return;
+        }
+
         const res = await fetch("/api/campaigns", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -870,20 +903,30 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                     </span>
 
                     <div className="flex items-center gap-1.5">
-                      {camp.zohoSyncStatus === "Pending" && (
+                      {(camp.zohoSyncStatus === "Pending" || camp.zohoSyncStatus === "Partial") && (
                         <button
                           type="button"
                           disabled={retryingCampaignId === camp.id}
                           onClick={() => handleRetrySync(camp)}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-semibold transition-all duration-200 cursor-pointer border border-amber-200 shadow-2xs disabled:opacity-50"
-                          title="Re-fire the Zoho sync webhook and poll for deal ID"
+                          title={
+                            camp.zohoSyncStatus === "Partial"
+                              ? "Create the missing Zoho Books invoice & Projects workspace for this CRM-synced campaign (deal is not duplicated)"
+                              : "Re-fire the Zoho sync webhook and poll for deal ID"
+                          }
                         >
                           <ArrowsClockwise
                             size={13}
                             weight="bold"
                             className={retryingCampaignId === camp.id ? "animate-spin" : ""}
                           />
-                          <span>{retryingCampaignId === camp.id ? "Syncing…" : "Retry Sync"}</span>
+                          <span>
+                            {retryingCampaignId === camp.id
+                              ? "Syncing…"
+                              : camp.zohoSyncStatus === "Partial"
+                              ? "Complete Sync"
+                              : "Retry Sync"}
+                          </span>
                         </button>
                       )}
                       {onModifyInCopilot && (

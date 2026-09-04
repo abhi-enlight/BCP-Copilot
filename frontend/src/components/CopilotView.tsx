@@ -587,26 +587,57 @@ export default function CopilotView({
         const zohoSync = data.zohoSync;
         const assignedNames = Array.from(new Set((targetPlanState.tasks || []).map((t) => t.assignee))).join(", ");
 
+        const crmDealId =
+          zohoSync?.crmDeal?.dealId ||
+          created.zohoCrmDealId ||
+          (created as any)?.zoho_crm_deal_id ||
+          null;
+        const crmDealUrl =
+          zohoSync?.crmDeal?.dealUrl ||
+          created.zohoCrmDealUrl ||
+          (created as any)?.zoho_crm_deal_url ||
+          (crmDealId ? `https://crm.zoho.in/crm/org/tab/Potentials/${crmDealId}` : undefined);
+        const projectId =
+          zohoSync?.projects?.projectId ||
+          created.zohoProjectId ||
+          (created as any)?.zoho_project_id ||
+          null;
+        const projectUrl =
+          zohoSync?.projects?.projectUrl ||
+          created.zohoProjectUrl ||
+          (created as any)?.zoho_project_url ||
+          (projectId ? `https://projects.zoho.in/portal/enlightlabdotcom#project/${projectId}` : undefined);
+        const invoiceId =
+          zohoSync?.books?.invoiceId ||
+          zohoSync?.booksInvoice?.invoiceId ||
+          created.zohoBooksInvoiceId ||
+          (created as any)?.zoho_books_invoice_id ||
+          null;
+        const invoiceUrl =
+          zohoSync?.books?.invoiceUrl ||
+          zohoSync?.booksInvoice?.invoiceUrl ||
+          created.zohoBooksInvoiceUrl ||
+          (created as any)?.zoho_books_invoice_url ||
+          (invoiceId ? `https://books.zoho.in/app#/invoices/${invoiceId}` : undefined);
+
         // Restore all Zoho product IDs into working plan state
         setWorkingPlan((prev) =>
           prev
             ? {
                 ...prev,
                 status: "live",
-                zohoCrmDealId: created.zohoCrmDealId,
-                zohoCrmDealUrl: created.zohoCrmDealUrl,
-                zohoProjectId: created.zohoProjectId,
-                zohoProjectUrl: created.zohoProjectUrl,
-                zohoBooksInvoiceId: created.zohoBooksInvoiceId,
-                zohoBooksInvoiceUrl: created.zohoBooksInvoiceUrl,
-                zohoSyncStatus: created.zohoSyncStatus,
+                zohoCrmDealId: crmDealId || prev.zohoCrmDealId,
+                zohoCrmDealUrl: crmDealUrl || prev.zohoCrmDealUrl,
+                zohoProjectId: projectId || prev.zohoProjectId,
+                zohoProjectUrl: projectUrl || prev.zohoProjectUrl,
+                zohoBooksInvoiceId: invoiceId || prev.zohoBooksInvoiceId,
+                zohoBooksInvoiceUrl: invoiceUrl || prev.zohoBooksInvoiceUrl,
+                zohoSyncStatus: crmDealId && projectId && invoiceId ? "Synced" : "Partial",
               }
             : null
         );
         setIsPlanPanelOpen(true);
 
-        const crmDealId = zohoSync?.crmDeal?.dealId;
-        const invoiceId = created.zohoBooksInvoiceId || zohoSync?.booksInvoice?.invoiceId;
         showToast(
           crmDealId
             ? "Approved & synced to Zoho"
@@ -624,11 +655,13 @@ export default function CopilotView({
             `### Zoho Product Sync Status\n\n` +
             `| Product | Purpose | Status | ID |\n` +
             `|---------|---------|--------|----|\n` +
-            `| **Zoho CRM** | Campaign Deal (client opportunity & campaign record) | ${crmDealId ? "✅ Synced" : "⏳ Pending"} | ${crmDealId ? `\`${crmDealId}\`` : "—"} |\n` +
-            `| **Zoho Projects** | Task & milestone execution tracker | ${created.zohoProjectId ? "✅ Synced" : "⏳ Pending Auth"} | ${created.zohoProjectId ? `\`${created.zohoProjectId}\`` : "—"} |\n` +
-            `| **Zoho Books** | Advance payment, escrow & GST invoicing | ${invoiceId ? "✅ Synced" : "⏳ Pending Auth"} | ${invoiceId ? `\`${invoiceId}\`` : "—"} |\n\n` +
-            `SPOCs assigned: ${assignedNames}`,
-          timestamp: new Date(),
+            `| **Zoho CRM** | Campaign Deal (client opportunity & campaign record) | ${crmDealId ? "✅ Synced" : "⏳ Pending"} | ${crmDealId ? `\`${crmDealId}\`` : "—"} |\n` +            `| **Zoho Projects** | Task & milestone execution tracker | ${projectId ? "✅ Synced" : crmDealId ? "⚠️ Missing — approve again to create" : "⏳ Queued"} | ${projectId ? `\`${projectId}\`` : "—"} |\n` +
+            `| **Zoho Books** | Advance payment, escrow & GST invoicing | ${invoiceId ? "✅ Synced" : crmDealId ? "⚠️ Missing — approve again to create" : "⏳ Queued"} | ${invoiceId ? `\`${invoiceId}\`` : "—"} |\n\n` +
+            `SPOCs assigned: ${assignedNames}` +
+            (crmDealId && (!projectId || !invoiceId)
+              ? `\n\n> ⚠️ **Partial sync:** the CRM deal is live, but Zoho Books / Projects were not confirmed on this attempt — the Zoho API call likely timed out or lacked access. Click **Approve & Sync to Zoho** again to create only the missing records; the existing deal will **not** be duplicated.`
+              : ""),
+            timestamp: new Date(),
         };
 
         setSession((prev) => ({
