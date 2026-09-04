@@ -1873,12 +1873,6 @@ export async function createZohoBooksContact(client: string, companyName?: strin
     if (res.ok) {
       const data = await res.json();
       if (data.success && data.contactId) {
-        const norm = client.trim().toLowerCase();
-        KNOWN_ZOHO_BOOKS_CONTACTS[norm] = {
-          id: data.contactId,
-          name: data.contactName || contactName,
-          company: data.companyName || client,
-        };
         return {
           success: true,
           contactId: data.contactId,
