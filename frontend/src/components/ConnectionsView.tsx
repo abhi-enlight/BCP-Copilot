@@ -147,7 +147,7 @@ export default function ConnectionsView() {
       iconColor: "text-emerald-600",
       metrics: [
         { label: "Indexed SOPs", value: "34 docs" },
-        { label: "Repository", value: "Zoho Knowledge" },
+        { label: "Repository", value: "Vector Database" },
         { label: "Precedents", value: "34 SOPs" },
         { label: "Sync Status", value: "Live Synced" },
       ],
