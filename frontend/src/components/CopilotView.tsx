@@ -26,6 +26,7 @@ import {
   Tag,
   Funnel,
   Info,
+  WarningCircle,
 } from "@phosphor-icons/react";
 import ChatMessage, { type Message } from "@/components/ChatMessage";
 import ChatInput from "@/components/ChatInput";
@@ -65,6 +66,13 @@ interface WorkingPlanState {
   // Aggregate sync status across all Zoho products
   zohoSyncStatus?: "Pending" | "Partial" | "Synced" | "Failed";
   lastUpdatedAspect?: string;
+  booksCustomerId?: string;
+  booksContact?: {
+    exists: boolean;
+    contactId?: string;
+    contactName?: string;
+    suggestedName?: string;
+  };
 }
 
 
@@ -143,6 +151,9 @@ export default function CopilotView({
   const [isLoading, setIsLoading] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [isPushingToZoho, setIsPushingToZoho] = useState(false);
+  const [isCreatingBooksContact, setIsCreatingBooksContact] = useState(false);
+  const [isBooksModalOpen, setIsBooksModalOpen] = useState(false);
+  const booksCheckedRef = useRef<Set<string>>(new Set());
   // Label shown in the ThinkingProcess during long n8n tool calls (e.g. "Querying Zoho CRM")
   const [toolCallLabel, setToolCallLabel] = useState<string | null>(null);
 
@@ -227,6 +238,133 @@ export default function CopilotView({
     fetchRiskDigest();
   }, []);
 
+  // Proactive Zoho Books customer verification
+  const checkAndPromptBooksContact = useCallback(
+    async (clientName: string, suggestedName?: string) => {
+      if (!clientName || clientName === "Client" || clientName === "Unknown Client") return;
+      const key = clientName.toLowerCase().trim();
+      if (booksCheckedRef.current.has(key)) return;
+      booksCheckedRef.current.add(key);
+
+      try {
+        const res = await fetch("/api/campaigns", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "check_books_contact", client: clientName }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const contact = data.contact;
+          const exists = !!data.exists;
+
+          setWorkingPlan((prev) => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              booksCustomerId: exists ? contact?.contactId : undefined,
+              booksContact: {
+                exists,
+                contactId: contact?.contactId,
+                contactName: contact?.contactName || contact?.companyName,
+                suggestedName: suggestedName || `${clientName} India Pvt Ltd`,
+              },
+            };
+          });
+
+          if (!exists) {
+            const suggested = suggestedName || `${clientName} India Pvt Ltd`;
+            const alertMsg: Message = {
+              id: `msg-${Date.now()}-assistant-books-check`,
+              role: "assistant",
+              content:
+                `⚠️ **Zoho Books Pre-Flight Check:** Client **${clientName}** was not found in the active Zoho Books contacts directory.\n\n` +
+                `To ensure seamless escrow billing and automated invoice generation upon campaign approval, would you like me to register **${suggested}** in Zoho Books?\n\n` +
+                `Click the suggestion chip below or reply **"Yes, register in Books"**.`,
+              timestamp: new Date(),
+            };
+            setSession((prev) => ({
+              ...prev,
+              messages: [...prev.messages, alertMsg],
+            }));
+          }
+        }
+      } catch (err) {
+        console.warn("[checkAndPromptBooksContact] Failed:", err);
+      }
+    },
+    []
+  );
+
+  // Zoho Books customer registration handler
+  const handleCreateBooksContact = async (clientOverride?: string, companyOverride?: string): Promise<string | null> => {
+    const clientName = clientOverride || workingPlan?.campaignData.client;
+    if (!clientName) return null;
+
+    setIsCreatingBooksContact(true);
+    showToast(`Registering ${clientName} in Zoho Books…`, "sparkle");
+
+    try {
+      const res = await fetch("/api/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create_books_contact",
+          client: clientName,
+          companyName: companyOverride || workingPlan?.booksContact?.suggestedName,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.contactId) {
+          const contactId = data.contactId;
+          const contactName = data.contactName || `${clientName} India`;
+
+          setWorkingPlan((prev) => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              booksCustomerId: contactId,
+              booksContact: {
+                exists: true,
+                contactId,
+                contactName,
+              },
+            };
+          });
+
+          showToast(`✨ Registered ${contactName} in Zoho Books!`, "check");
+
+          const confirmMsg: Message = {
+            id: `msg-${Date.now()}-assistant-books-created`,
+            role: "assistant",
+            content:
+              `✅ **Zoho Books Customer Registered:**\n\n` +
+              `* **Contact Name**: ${contactName}\n` +
+              `* **Customer ID**: \`${contactId}\`\n` +
+              `* **Status**: Ready for Automated Invoicing\n\n` +
+              `When you approve this campaign, the advance invoice will be automatically generated and linked under this customer in Zoho Books.`,
+            timestamp: new Date(),
+          };
+          setSession((prev) => ({
+            ...prev,
+            messages: [...prev.messages, confirmMsg],
+          }));
+
+          setIsBooksModalOpen(false);
+          return contactId;
+        }
+      }
+      showToast("Could not register customer in Zoho Books", "info");
+    } catch (err) {
+      console.error("handleCreateBooksContact error:", err);
+      showToast("Failed to connect to Zoho Books API", "info");
+    } finally {
+      setIsCreatingBooksContact(false);
+    }
+    return null;
+  };
+
   // Intake initial plan context from Campaigns wizard
   useEffect(() => {
     if (!initialPlanContext) return;
@@ -276,6 +414,7 @@ export default function CopilotView({
           aspectSummary: initialPlanContext.plan.aspectSummary,
           status: "draft",
         });
+        checkAndPromptBooksContact(initialPlanContext.campaignData.client);
       }
       const newSess = createSession(`Plan: ${initialPlanContext.campaignData.name}`);
       const legalCount = initialPlanContext.plan.tasks.filter((t) => t.aspect === "legal").length;
@@ -297,7 +436,7 @@ export default function CopilotView({
         showToast(`Loaded ${initialPlanContext.plan.tasks.length} tasks for ${initialPlanContext.campaignData.name}`, "sparkle");
       }
     });
-  }, [initialPlanContext, showToast]);
+  }, [initialPlanContext, showToast, checkAndPromptBooksContact]);
 
   // Filtered tasks computation
   const displayedTasks = useMemo(() => {
@@ -317,8 +456,20 @@ export default function CopilotView({
   }, [workingPlan, selectedAspectFilter, taskSearchQuery]);
 
   // Handle approve & sync campaign to Zoho CRM (Deal), Zoho Projects, Zoho Books
-  const handleApprovePlanToZoho = async () => {
+  const handleApprovePlanToZoho = async (overrideSkipBooksCheck = false, contactIdOverride?: string) => {
     if (!workingPlan || workingPlan.status === "live") return;
+
+    const targetBooksId = contactIdOverride || workingPlan.booksCustomerId;
+
+    if (
+      !overrideSkipBooksCheck &&
+      workingPlan.booksContact &&
+      !workingPlan.booksContact.exists &&
+      !targetBooksId
+    ) {
+      setIsBooksModalOpen(true);
+      return;
+    }
 
     setIsPushingToZoho(true);
     setWorkingPlan((prev) => (prev ? { ...prev, status: "syncing" } : null));
@@ -331,6 +482,7 @@ export default function CopilotView({
           action: "approve_and_push_zoho",
           campaignData: workingPlan.campaignData,
           tasks: workingPlan.tasks,
+          booksCustomerId: targetBooksId,
         }),
       });
 
@@ -351,12 +503,14 @@ export default function CopilotView({
                 zohoProjectId: created.zohoProjectId,
                 zohoProjectUrl: created.zohoProjectUrl,
                 zohoBooksInvoiceId: created.zohoBooksInvoiceId,
+                zohoBooksInvoiceUrl: created.zohoBooksInvoiceUrl,
                 zohoSyncStatus: created.zohoSyncStatus,
               }
             : null
         );
 
         const crmDealId = zohoSync?.crmDeal?.dealId;
+        const invoiceId = created.zohoBooksInvoiceId || zohoSync?.booksInvoice?.invoiceId;
         showToast(
           crmDealId
             ? `Approved & synced to Zoho CRM — Deal ${crmDealId}`
@@ -374,9 +528,9 @@ export default function CopilotView({
             `### Zoho Product Sync Status\n\n` +
             `| Product | Purpose | Status | ID |\n` +
             `|---------|---------|--------|----|\n` +
-            `| **Zoho CRM** | Campaign Deal (client opportunity & SOW) | ${crmDealId ? "✅ Synced" : "⏳ Pending"} | ${crmDealId ? `\`${crmDealId}\`` : "—"} |\n` +
+            `| **Zoho CRM** | Campaign Deal (client opportunity & campaign record) | ${crmDealId ? "✅ Synced" : "⏳ Pending"} | ${crmDealId ? `\`${crmDealId}\`` : "—"} |\n` +
             `| **Zoho Projects** | Task & milestone execution tracker | ${created.zohoProjectId ? "✅ Synced" : "⏳ Pending Auth"} | ${created.zohoProjectId ? `\`${created.zohoProjectId}\`` : "—"} |\n` +
-            `| **Zoho Books** | Advance payment, escrow & GST invoicing | ${created.zohoBooksInvoiceId ? "✅ Synced" : "⏳ Pending Auth"} | ${created.zohoBooksInvoiceId ? `\`${created.zohoBooksInvoiceId}\`` : "—"} |\n\n` +
+            `| **Zoho Books** | Advance payment, escrow & GST invoicing | ${invoiceId ? "✅ Synced" : "⏳ Pending Auth"} | ${invoiceId ? `\`${invoiceId}\`` : "—"} |\n\n` +
             `SPOCs assigned: ${assignedNames}`,
           timestamp: new Date(),
         };
@@ -549,6 +703,32 @@ export default function CopilotView({
       setIsThinking(true);
       setToolCallLabel("Analyzing prompt & SOP requirements…");
 
+      // Check conversational Zoho Books customer registration confirmation
+      const lower = content.toLowerCase().trim();
+      const isBooksRegisterQuery =
+        (lower.includes("register") ||
+          lower.includes("create") ||
+          lower === "yes" ||
+          lower === "yes please" ||
+          lower === "sure" ||
+          lower === "yes, create it" ||
+          lower === "yes, register in books" ||
+          lower.includes("add contact") ||
+          lower.includes("create contact") ||
+          lower.includes("register customer")) &&
+        (lower.includes("book") ||
+          lower.includes("contact") ||
+          lower.includes("customer") ||
+          (workingPlan?.booksContact && !workingPlan?.booksContact?.exists));
+
+      if (isBooksRegisterQuery && workingPlan && workingPlan.status === "draft") {
+        setIsLoading(false);
+        setIsThinking(false);
+        setToolCallLabel(null);
+        await handleCreateBooksContact();
+        return;
+      }
+
       let activePlan = workingPlan;
       let planModified = false;
       let modificationSummary = "";
@@ -576,11 +756,14 @@ export default function CopilotView({
           }
 
           if (intentData.intent === "PLAN_CREATE" && intentData.plan && intentData.campaignData) {
+            const booksContact = intentData.booksContact;
             const newWorkingPlan: WorkingPlanState = {
               campaignData: intentData.campaignData,
               tasks: intentData.plan.tasks,
               aspectSummary: intentData.plan.aspectSummary,
               status: "draft",
+              booksCustomerId: booksContact?.contactId,
+              booksContact: booksContact,
             };
             activePlan = newWorkingPlan;
             setWorkingPlan(newWorkingPlan);
@@ -590,6 +773,24 @@ export default function CopilotView({
               `✨ AI generated ${intentData.plan.tasks.length} bespoke tasks for ${intentData.campaignData.name}`,
               "sparkle"
             );
+
+            if (booksContact && !booksContact.exists) {
+              const clientName = intentData.campaignData.client;
+              const suggested = booksContact.suggestedName || `${clientName} India Pvt Ltd`;
+              const booksAlertMsg: Message = {
+                id: `msg-${Date.now()}-assistant-books-prompt`,
+                role: "assistant",
+                content:
+                  `⚠️ **Zoho Books Pre-Flight Check:** Client **${clientName}** was not found in the active Zoho Books contacts directory.\n\n` +
+                  `To ensure seamless escrow billing and automated invoice generation upon approval, would you like me to register **${suggested}** in Zoho Books?\n\n` +
+                  `Click the suggestion chip below or reply **"Yes, register in Books"**.`,
+                timestamp: new Date(),
+              };
+              setSession((prev) => ({
+                ...prev,
+                messages: [...prev.messages, booksAlertMsg],
+              }));
+            }
           } else if (
             (intentData.intent === "PLAN_MODIFY" && workingPlan) ||
             ((content.toLowerCase().includes("change") ||
@@ -1235,6 +1436,7 @@ export default function CopilotView({
                       key="thinking"
                       mode={workingPlan && session.messages.length === 1 ? "plan" : "chat"}
                       toolCallLabel={toolCallLabel ?? undefined}
+                      userPrompt={session.messages[session.messages.length - 1]?.content || ""}
                     />
                   )}
                 </AnimatePresence>
@@ -1255,6 +1457,20 @@ export default function CopilotView({
                   </>
                 ) : workingPlan && workingPlan.status === "draft" ? (
                   <>
+                    {workingPlan.booksContact && !workingPlan.booksContact.exists && !workingPlan.booksCustomerId && (
+                      <button
+                        onClick={() => handleCreateBooksContact()}
+                        disabled={isCreatingBooksContact}
+                        className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-900 px-2.5 py-1 rounded-full font-semibold transition-colors cursor-pointer border border-amber-300 flex items-center gap-1 shadow-2xs animate-pulse"
+                      >
+                        {isCreatingBooksContact ? (
+                          <ArrowsClockwise size={12} className="animate-spin text-amber-600" />
+                        ) : (
+                          <Sparkle size={12} weight="fill" className="text-amber-500" />
+                        )}
+                        Register &quot;{workingPlan.campaignData.client}&quot; in Zoho Books
+                      </button>
+                    )}
                     <button onClick={() => sendMessage("Assign all legal tasks to Akash Verma")} className="text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-full font-medium transition-colors cursor-pointer border border-indigo-200">Assign all legal tasks to Akash</button>
                     <button onClick={() => sendMessage("Suggest improvements")} className="text-[10px] bg-sky-50 hover:bg-sky-100 text-sky-700 px-2.5 py-1 rounded-full font-medium transition-colors cursor-pointer border border-sky-200">Suggest improvements</button>
                     <button onClick={() => sendMessage("Approve")} className="text-[10px] bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full font-medium transition-colors cursor-pointer border border-emerald-200 flex items-center gap-1"><CheckCircle size={12} weight="fill" /> Approve</button>
@@ -1310,6 +1526,27 @@ export default function CopilotView({
                   <span className="text-[11px] font-mono font-medium text-stone-600 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200/60">
                     {workingPlan.campaignData.codeVolume}
                   </span>
+                  {workingPlan.booksCustomerId || workingPlan.booksContact?.exists ? (
+                    <span className="inline-flex items-center gap-1 text-[10.5px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                      <CheckCircle size={12} weight="fill" />
+                      Books: {workingPlan.booksContact?.contactName || "Verified"}
+                    </span>
+                  ) : workingPlan.booksContact && !workingPlan.booksContact.exists ? (
+                    <button
+                      type="button"
+                      onClick={() => handleCreateBooksContact()}
+                      disabled={isCreatingBooksContact}
+                      className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded-md border border-amber-300 transition-colors cursor-pointer"
+                      title="Client not found in Zoho Books. Click to register customer."
+                    >
+                      {isCreatingBooksContact ? (
+                        <ArrowsClockwise size={12} className="animate-spin text-amber-600" />
+                      ) : (
+                        <WarningCircle size={12} weight="fill" className="text-amber-600" />
+                      )}
+                      Books: Missing (Register)
+                    </button>
+                  ) : null}
                 </div>
               </div>
 
@@ -1351,7 +1588,7 @@ export default function CopilotView({
                 ) : (
                   <button
                     type="button"
-                    onClick={handleApprovePlanToZoho}
+                    onClick={() => handleApprovePlanToZoho()}
                     disabled={isPushingToZoho}
                     className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold shadow-xs hover:shadow transition-all cursor-pointer active:scale-98"
                   >
@@ -1529,34 +1766,6 @@ export default function CopilotView({
                               <Clock size={11} className="text-stone-400" />
                               {task.tat}
                             </div>
-
-                            {/* Urgency Selector */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const nextUrgency =
-                                  task.urgency === "HIGHEST"
-                                    ? "HIGH"
-                                    : task.urgency === "HIGH"
-                                    ? "MEDIUM"
-                                    : task.urgency === "MEDIUM"
-                                    ? "NORMAL"
-                                    : "HIGHEST";
-                                handleUpdateTaskField(task.id, {
-                                  urgency: nextUrgency as AspectTask["urgency"],
-                                });
-                              }}
-                              className={`text-[9.5px] font-mono px-2 py-0.5 rounded border transition-colors cursor-pointer ${
-                                task.urgency === "HIGHEST"
-                                  ? "bg-rose-50 text-rose-800 border-rose-200 font-bold"
-                                  : task.urgency === "HIGH"
-                                  ? "bg-amber-50 text-amber-800 border-amber-200 font-semibold"
-                                  : "bg-stone-50 text-stone-600 border-stone-200/80"
-                              }`}
-                              title="Click to toggle priority urgency"
-                            >
-                              {task.urgency}
-                            </button>
 
                             {/* Delete Task Button */}
                             <button
@@ -1766,38 +1975,20 @@ export default function CopilotView({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold text-stone-700 uppercase tracking-wider mb-1">
-                      Turnaround Time (TAT)
-                    </label>
-                    <select
-                      value={newTaskForm.tat}
-                      onChange={(e) => setNewTaskForm({ ...newTaskForm, tat: e.target.value })}
-                      className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:border-amber-500 text-xs text-stone-900"
-                    >
-                      <option value="1 Day">1 Day</option>
-                      <option value="2 Days">2 Days</option>
-                      <option value="3 Days">3 Days</option>
-                      <option value="5 Days">5 Days</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-stone-700 uppercase tracking-wider mb-1">
-                      Urgency
-                    </label>
-                    <select
-                      value={newTaskForm.urgency}
-                      onChange={(e) => setNewTaskForm({ ...newTaskForm, urgency: e.target.value as any })}
-                      className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:border-amber-500 text-xs text-stone-900"
-                    >
-                      <option value="HIGHEST">HIGHEST</option>
-                      <option value="HIGH">HIGH</option>
-                      <option value="MEDIUM">MEDIUM</option>
-                      <option value="NORMAL">NORMAL</option>
-                    </select>
-                  </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-stone-700 uppercase tracking-wider mb-1">
+                    Turnaround Time (TAT)
+                  </label>
+                  <select
+                    value={newTaskForm.tat}
+                    onChange={(e) => setNewTaskForm({ ...newTaskForm, tat: e.target.value })}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl outline-none focus:border-amber-500 text-xs text-stone-900"
+                  >
+                    <option value="1 Day">1 Day</option>
+                    <option value="2 Days">2 Days</option>
+                    <option value="3 Days">3 Days</option>
+                    <option value="5 Days">5 Days</option>
+                  </select>
                 </div>
 
                 <div>
@@ -1831,6 +2022,92 @@ export default function CopilotView({
                   <Plus size={14} weight="bold" />
                   <span>Add to Plan</span>
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Zoho Books Customer Registration Confirmation Modal */}
+      <AnimatePresence>
+        {isBooksModalOpen && workingPlan && (
+          <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 sm:p-6">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsBooksModalOpen(false)}
+              className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs"
+            />
+
+            <motion.div
+              initial={{ scale: 0.96, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.96, opacity: 0 }}
+              className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-stone-200 overflow-hidden z-10"
+            >
+              <div className="p-6">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center mb-4">
+                  <Receipt size={22} weight="bold" />
+                </div>
+                <h3 className="text-base font-bold text-stone-900 mb-1">
+                  Zoho Books Customer Required
+                </h3>
+                <p className="text-xs text-stone-600 leading-relaxed mb-4">
+                  Client <strong className="text-stone-900">{workingPlan.campaignData.client}</strong> is not registered as an active contact in Zoho Books (Org <code className="font-mono text-stone-700 bg-stone-100 px-1 py-0.5 rounded text-[11px]">60085935698</code>).
+                </p>
+                <div className="bg-amber-50/80 rounded-xl p-3 border border-amber-200/80 text-[11.5px] text-amber-900 flex items-start gap-2.5 mb-5">
+                  <Info size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                  <span>
+                    To automatically issue the advance GST invoice for <strong>{workingPlan.campaignData.budget}</strong>, we should register them before approving.
+                  </span>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const newId = await handleCreateBooksContact();
+                      if (newId) {
+                        await handleApprovePlanToZoho(true, newId);
+                      }
+                    }}
+                    disabled={isCreatingBooksContact}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {isCreatingBooksContact ? (
+                      <>
+                        <ArrowsClockwise size={14} className="animate-spin" />
+                        <span>Registering & Approving…</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkle size={14} weight="fill" className="text-amber-300" />
+                        <span>Register in Books & Approve</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsBooksModalOpen(false);
+                      handleApprovePlanToZoho(true);
+                    }}
+                    disabled={isCreatingBooksContact}
+                    className="w-full py-2 px-4 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    Approve Without Books Invoice
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsBooksModalOpen(false)}
+                    className="w-full py-1.5 text-center text-xs text-stone-400 hover:text-stone-600 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>

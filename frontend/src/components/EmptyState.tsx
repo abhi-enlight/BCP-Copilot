@@ -2,10 +2,10 @@
 
 import { motion } from "motion/react";
 import {
-  Megaphone,
-  QrCode,
-  Gift,
-  Coffee,
+  UserFocus,
+  Sparkle,
+  Database,
+  Kanban,
 } from "@phosphor-icons/react";
 import BigCityLogo from "./BigCityLogo";
 
@@ -16,40 +16,40 @@ interface EmptyStateProps {
 
 const suggestions = [
   {
-    icon: QrCode,
-    label: "Nestlé Festive Scratch & Win",
-    tag: "FMCG · QR Codes",
+    icon: UserFocus,
+    label: "Search Zoho CRM Leads",
+    tag: "CRM · Lead Discovery",
     color: "text-amber-600",
     bg: "bg-amber-50",
     border: "border-amber-200",
-    text: "Create a 4-aspect campaign plan for Nestlé Festive Scratch & Win with 100k on-pack QR codes and ₹25 Lakh budget.",
+    text: "Search Zoho CRM for our latest client leads and show me their company details.",
   },
   {
-    icon: Megaphone,
-    label: "Cadbury Silk Valentine Cashback",
-    tag: "Cashback · UPI Pool",
-    color: "text-rose-600",
-    bg: "bg-rose-50",
-    border: "border-rose-200",
-    text: "Plan Mondelez Cadbury Silk Valentine's ₹100 Assured Cashback campaign with 350,000 packs and UPI escrow.",
+    icon: Sparkle,
+    label: "Campaign Ideation & Tasks",
+    tag: "Campaign · Operational Plan",
+    color: "text-indigo-600",
+    bg: "bg-indigo-50",
+    border: "border-indigo-200",
+    text: "I have a promotional campaign idea for a client lead — help me build the operational tasks, timeline, and budget.",
   },
   {
-    icon: Gift,
-    label: "Pepsi UEFA Zomato Dining Pass",
-    tag: "EGV · Dining Voucher",
-    color: "text-sky-600",
-    bg: "bg-sky-50",
-    border: "border-sky-200",
-    text: "Generate a campaign launch plan for Pepsi UEFA Champions League ₹200 Zomato Dining Pass with 500,000 cans.",
-  },
-  {
-    icon: Coffee,
-    label: "Tata Tea Gold Amazon Reward",
-    tag: "EGV · ₹20L Budget",
+    icon: Database,
+    label: "Count Suite Elements",
+    tag: "Intelligence · CRM & Books",
     color: "text-emerald-600",
     bg: "bg-emerald-50",
     border: "border-emerald-200",
-    text: "Create a milestone execution plan for Tata Tea Gold ₹50 Amazon Pay Assured Reward campaign for 200k packs.",
+    text: "How many leads do we have in Zoho CRM, and how many invoices are in Zoho Books?",
+  },
+  {
+    icon: Kanban,
+    label: "Inspect Zoho Projects",
+    tag: "Zoho Projects · Tasks",
+    color: "text-sky-600",
+    bg: "bg-sky-50",
+    border: "border-sky-200",
+    text: "List our active projects in Zoho Projects and check open execution tasks.",
   },
 ];
 
@@ -60,7 +60,7 @@ export default function EmptyState({ onSelectPrompt, onSuggestionClick }: EmptyS
   };
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center px-4 py-10 max-w-2xl w-full mx-auto my-auto">
+    <div className="flex-1 flex flex-col items-center justify-center px-4 py-10 max-w-2xl w-full mx-auto my-auto select-none">
       {/* Brand Hero Glow */}
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
@@ -69,7 +69,7 @@ export default function EmptyState({ onSelectPrompt, onSuggestionClick }: EmptyS
         className="relative mb-6"
       >
         <div className="relative flex items-center justify-center">
-          <div className="absolute inset-0 rounded-2xl bg-amber-500/20 blur-xl scale-125" />
+          <div className="absolute inset-0 rounded-2xl bg-amber-500/15 blur-xl scale-125" />
           <BigCityLogo size={64} className="relative shadow-lg rounded-2xl" />
         </div>
       </motion.div>
@@ -81,16 +81,17 @@ export default function EmptyState({ onSelectPrompt, onSuggestionClick }: EmptyS
         transition={{ duration: 0.4, delay: 0.08 }}
         className="text-center mb-8"
       >
-        <h2 className="text-2xl font-bold text-slate-900 tracking-tight mb-2">
+        <h2 className="text-2xl font-bold text-stone-900 tracking-tight mb-2">
           BCP Assist Campaign Intelligence
         </h2>
-        <p className="text-[13px] text-slate-600 max-w-md mx-auto leading-relaxed">
-          Powered by <strong className="text-slate-900 font-semibold">Zoho Knowledge Base</strong> SOP memory, and live{" "}
-          <strong className="text-slate-900 font-semibold">Zoho CRM Suite</strong> integration.
+        <p className="text-[13px] text-stone-600 max-w-md mx-auto leading-relaxed">
+          Connected directly to your live <strong className="text-stone-900 font-semibold">Zoho CRM Leads</strong>,{" "}
+          <strong className="text-stone-900 font-semibold">Zoho Books</strong>, and{" "}
+          <strong className="text-stone-900 font-semibold">Zoho Projects</strong>.
         </p>
       </motion.div>
 
-      {/* Suggestion Cards */}
+      {/* Action Starter Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 w-full">
         {suggestions.map((item, i) => {
           const IconComp = item.icon;
@@ -103,20 +104,20 @@ export default function EmptyState({ onSelectPrompt, onSuggestionClick }: EmptyS
               whileHover={{ scale: 1.015, y: -2 }}
               whileTap={{ scale: 0.985 }}
               onClick={() => handleClick(item.text)}
-              className="group flex flex-col items-start p-4.5 rounded-2xl bg-white hover:bg-slate-50/60 border border-slate-200/90 hover:border-indigo-300 hover:shadow-[0_8px_20px_-4px_rgba(15,23,42,0.06)] transition-all text-left shadow-2xs cursor-pointer"
+              className="group flex flex-col items-start p-4 rounded-2xl bg-white hover:bg-stone-50/70 border border-stone-200/90 hover:border-amber-300 hover:shadow-md transition-all text-left shadow-2xs cursor-pointer"
             >
               <div className="flex items-center justify-between w-full mb-2.5">
                 <div className={`p-2 rounded-xl ${item.bg} ${item.border} border`}>
                   <IconComp size={16} weight="duotone" className={item.color} />
                 </div>
-                <span className="text-[10.5px] font-medium px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200/80">
+                <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-md bg-stone-100 text-stone-600 border border-stone-200/80">
                   {item.tag}
                 </span>
               </div>
-              <span className="text-[13.5px] font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">
+              <span className="text-[13px] font-bold text-stone-900 group-hover:text-amber-700 transition-colors">
                 {item.label}
               </span>
-              <p className="text-[12px] text-slate-500 leading-relaxed mt-1 line-clamp-2">
+              <p className="text-[11.5px] text-stone-500 leading-relaxed mt-1 line-clamp-2">
                 {item.text}
               </p>
             </motion.button>

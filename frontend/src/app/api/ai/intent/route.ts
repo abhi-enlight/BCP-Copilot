@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateAIAspectPlan, generateDynamicBespokePlan, type AspectTask, type Campaign } from "@/app/api/campaigns/route";
+import { generateAIAspectPlan, generateDynamicBespokePlan, checkZohoBooksContact, type AspectTask, type Campaign } from "@/app/api/campaigns/route";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -33,10 +33,11 @@ User Message:
 
 Instructions:
 1. Understand the semantic intent of the user. Classify intent as ONE of:
-   - "PLAN_CREATE": User wants to create, plan, draft, set up, or launch a promotional campaign or brief (e.g. mentions brand, cashback, rewards, vouchers, budget, volume, mechanics, or asks to plan/draft a campaign).
+   - "PLAN_CREATE": User has provided CONCRETE details to create a promotional campaign with a SPECIFIC brand or client name (e.g. Amul, Rangoni, Pepsi, etc.) AND offer parameters (e.g. cashback, budget, rewards).
+     CRITICAL: DO NOT classify as PLAN_CREATE if the user is merely stating they have an idea or asking for help to build a plan without naming a real client or brand. Classify such exploratory statements as "CHAT" so the agent asks for the client lead first.
    - "PLAN_MODIFY": User is asking to modify, update, reassign, adjust, add tasks, or change parameters of the active campaign plan.
    - "PLAN_APPROVE": User explicitly confirms, approves, or wants to push/sync the active plan to Zoho (e.g. "looks good", "approve", "push to zoho", "go live", "yes proceed").
-   - "CHAT": User is asking a question, seeking knowledge, querying status/invoices, or having a general conversation.
+   - "CHAT": User is asking a question, seeking knowledge, querying status/invoices, or stating they have an idea / having a general conversation.
 
 2. If intent is "PLAN_CREATE", extract all parameters you can find from the user's brief:
    - name: Campaign title or descriptive name
@@ -114,12 +115,31 @@ Instructions:
       console.warn("[AI Intent] Webhook evaluation timeout/fallback:", e.message);
     }
 
-    // If AI identified PLAN_CREATE, synthesize the complete 4-aspect operational task plan
+    // If AI identified PLAN_CREATE, only synthesize the plan if the user ACTUALLY supplied a real client/brand
     if (aiIntent === "PLAN_CREATE" && extractedData?.campaignData) {
       const cData = extractedData.campaignData;
+      const rawClient = String(cData.client || "").trim();
+      const isPlaceholderClient =
+        !rawClient ||
+        rawClient.toLowerCase() === "enterprise client" ||
+        rawClient.toLowerCase() === "unknown" ||
+        rawClient.toLowerCase() === "client" ||
+        rawClient.toLowerCase() === "a client" ||
+        rawClient.toLowerCase() === "client lead";
+
+      // If user hasn't provided a real client name or specific campaign details, DO NOT generate a plan!
+      if (isPlaceholderClient) {
+        return NextResponse.json({
+          success: true,
+          intent: "CHAT",
+          reasoning: "User has not specified a concrete client or brand yet. Retaining CHAT mode to collect brief details.",
+          extractedData,
+        });
+      }
+
       const fullPlan = await generateAIAspectPlan({
-        name: cData.name || "Consumer Promotion Campaign",
-        client: cData.client || "Enterprise Client",
+        name: cData.name || `${rawClient} Promotional Campaign`,
+        client: rawClient,
         category: cData.category || "FMCG",
         rewardType: cData.rewardType || "Cashback",
         partner: cData.partner,
@@ -127,6 +147,8 @@ Instructions:
         codeVolume: cData.codeVolume || "250,000 packs",
         brief: cData.brief || message,
       });
+
+      const booksContact = await checkZohoBooksContact(fullPlan.client);
 
       return NextResponse.json({
         success: true,
@@ -142,6 +164,13 @@ Instructions:
           startDate: fullPlan.startDate,
           endDate: fullPlan.endDate,
           brief: fullPlan.brief,
+          booksCustomerId: booksContact.contact?.contactId || undefined,
+        },
+        booksContact: {
+          exists: booksContact.exists,
+          contactId: booksContact.contact?.contactId,
+          contactName: booksContact.contact?.contactName,
+          suggestedName: booksContact.suggestedName,
         },
         plan: {
           tasks: fullPlan.tasks,

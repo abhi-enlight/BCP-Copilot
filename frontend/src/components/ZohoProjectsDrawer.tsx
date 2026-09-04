@@ -217,18 +217,10 @@ export default function ZohoProjectsDrawer({
               </div>
             </div>
 
-            {/* Progress bar */}
-            <div className="mt-3.5 flex items-center gap-3">
-              <div className="flex-1 h-1 bg-stone-100 rounded-full overflow-hidden">
-                <motion.div
-                  className="h-full bg-emerald-500 rounded-full"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${completionPct}%` }}
-                  transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-                />
-              </div>
-              <span className="text-[11px] font-mono font-semibold text-stone-600 flex-shrink-0">
-                {totalCompleted}/{campaign.tasks.length} done
+            {/* Task completion counter */}
+            <div className="mt-2.5 flex items-center justify-between">
+              <span className="text-[11px] font-mono font-medium text-stone-500">
+                {totalCompleted} of {campaign.tasks.length} tasks completed
               </span>
             </div>
           </div>

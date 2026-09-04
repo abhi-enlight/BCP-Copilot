@@ -82,6 +82,7 @@ export function extractCampaignMetadata(input: {
   codeVolume?: string;
   rewardType?: string;
   category?: string;
+  partner?: string;
   startDate?: string;
   endDate?: string;
 }) {
@@ -170,34 +171,56 @@ export function extractCampaignMetadata(input: {
   }
 
   // Extract reward type & partner
-  const isVoucher = /amazon\s*pay|swiggy|zomato|voucher|egv|myntra|flipkart|gift\s*card|dining/i.test(text);
-  const isCashback = /cashback|upi|phonepe|paytm|gpay|google\s*pay|wallet|instant\s*cash/i.test(text);
-  const isScratch = /scratch|gold\s*coin|mega\s*draw/i.test(text);
+  const rawReward = (input.rewardType || "").toLowerCase();
+  const isScratchInput = rawReward.includes("scratch") || /scratch|gold\s*coin|mega\s*draw|lucky\s*draw|sweepstake|contest/i.test(text);
+  const isMerchandiseInput = rawReward.includes("merch") || /merchandise|hamper|jersey|physical\s*kit|physical\s*gift/i.test(text);
+  const isDiningInput = rawReward.includes("dining") || /zomato\s*dining|swiggy\s*dineout|dineout|restaurant\s*pass|dining\s*voucher/i.test(text);
+  const isVoucherInput = rawReward.includes("egv") || rawReward.includes("voucher") || rawReward.includes("gift card") || /amazon\s*pay|swiggy|zomato|voucher|egv|myntra|flipkart|gift\s*card/i.test(text);
+  const isCashbackInput = rawReward.includes("cashback") || rawReward.includes("upi") || /cashback|upi|phonepe|paytm|gpay|google\s*pay|wallet|instant\s*cash/i.test(text);
 
-  const rewardType = (input.rewardType ||
-    (isVoucher ? "EGV" : isCashback ? "Cashback" : isScratch ? "Scratch & Win" : "Cashback")) as Campaign["rewardType"];
+  const rewardType = (
+    isScratchInput
+      ? "Scratch & Win"
+      : isMerchandiseInput
+      ? "Merchandise"
+      : isDiningInput
+      ? "EGV"
+      : isVoucherInput
+      ? "EGV"
+      : isCashbackInput
+      ? "Cashback"
+      : "Cashback"
+  ) as Campaign["rewardType"];
 
-  let partner = "NPCI / Razorpay / UPI";
-  if (/phonepe/i.test(text)) partner = "PhonePe";
-  else if (/google\s*pay|gpay/i.test(text)) partner = "Google Pay";
-  else if (/amazon\s*pay/i.test(text)) partner = "Amazon Pay";
-  else if (/swiggy/i.test(text)) partner = "Swiggy";
-  else if (/zomato/i.test(text)) partner = "Zomato";
-  else if (/myntra/i.test(text)) partner = "Myntra";
-  else if (/flipkart/i.test(text)) partner = "Flipkart";
-  else if (/paytm/i.test(text)) partner = "Paytm Wallet";
+  let partner = input.partner || "";
+  if (!partner) {
+    if (/phonepe/i.test(text)) partner = "PhonePe";
+    else if (/google\s*pay|gpay/i.test(text)) partner = "Google Pay";
+    else if (/amazon\s*pay/i.test(text)) partner = "Amazon Pay";
+    else if (/swiggy\s*dineout|dineout/i.test(text)) partner = "Dineout";
+    else if (/swiggy/i.test(text)) partner = "Swiggy";
+    else if (/zomato/i.test(text)) partner = "Zomato";
+    else if (/myntra/i.test(text)) partner = "Myntra";
+    else if (/flipkart/i.test(text)) partner = "Flipkart";
+    else if (/paytm/i.test(text)) partner = "Paytm Wallet";
+    else if (isScratchInput) partner = "BigCity Scratch Portal";
+    else if (isMerchandiseInput) partner = "Logistics Fulfillment Network";
+    else if (isDiningInput) partner = "Restaurant Partner Network";
+    else if (isVoucherInput) partner = "Brand Voucher Aggregator";
+    else partner = "UPI / NPCI";
+  }
 
   const category = (input.category ||
-    (/amul|beverage|coke|pepsi|drink|dairy|kool/i.test(text)
-      ? "Beverages"
-      : /samsung|phone|electronic/i.test(text)
-      ? "Electronics"
-      : /puma|retail|myntra|store|shoe/i.test(text)
+    (/qsr|kfc|mcdonald|starbucks|cafe|burger/i.test(text)
+      ? "QSR"
+      : /puma|zudio|trent|pantaloons|lifestyle|retail|store|shoe|apparel/i.test(text)
       ? "Retail"
+      : /samsung|phone|electronic|tv|laptop/i.test(text)
+      ? "Electronics"
+      : /amul|beverage|coke|pepsi|drink|dairy|kool/i.test(text)
+      ? "Beverages"
       : /bfsi|bank|insurance/i.test(text)
       ? "BFSI"
-      : /qsr|kfc|mcdonald/i.test(text)
-      ? "QSR"
       : "FMCG")) as Campaign["category"];
 
   return {
@@ -238,248 +261,1324 @@ export function generateDynamicBespokePlan(input: {
 } {
   const meta = extractCampaignMetadata(input);
   const ts = Date.now();
+  const contextStr = `${meta.name} ${meta.category} ${meta.rewardType} ${meta.brief} ${meta.partner} ${input.rewardType || ""}`.toLowerCase();
 
-  const isVoucher = meta.rewardType === "EGV";
-  const isScratch = meta.rewardType === "Scratch & Win";
-  const partnerLabel = meta.partner || (isVoucher ? "Amazon Pay / Swiggy" : "UPI / NPCI");
+  const isScratch =
+    meta.rewardType === "Scratch & Win" ||
+    /scratch|contest|lucky|jackpot|sweepstake|lottery|spin/i.test(contextStr);
 
-  const tasks: AspectTask[] = [
-    // ── LEGAL ASPECT (3-4 Tasks) ──
-    {
-      id: `task-${ts}-1`,
-      sopCode: "SOP-LEG-01",
-      title: `${meta.name} — Master T&C Drafting & Disclaimer Clearance`,
-      aspect: "legal",
-      assignee: "Prashant Mittal",
-      role: "Legal Head",
-      urgency: "HIGHEST",
-      tat: "2 Days",
-      status: "IN_PROGRESS",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "In Progress",
-      details: `Draft comprehensive legal T&C for ${meta.client} (${meta.name}). Specify eligibility window (${meta.startDate} to ${meta.endDate}), 1 claim per user mobile cap, grievance redressal, and dispute resolution jurisdiction.`,
-      verificationRequirement: "Signed Legal SOW Clearance Doc with client sign-off.",
-      mandatoryGate: true,
-    },
-    {
-      id: `task-${ts}-2`,
-      sopCode: "SOP-LEG-02",
-      title: `${partnerLabel} Written Brand IP & Logo Usage Approvals`,
-      aspect: "legal",
-      assignee: "Akash Verma",
-      role: "Legal Counsel",
-      urgency: "HIGHEST",
-      tat: "3 Days",
-      status: "PENDING_APPROVAL",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "Open",
-      details: `Secure formal written brand IP consent from ${partnerLabel} for printing logos on ${meta.codeVolume} on-pack collaterals and ${meta.client} POSM assets.`,
-      verificationRequirement: "Partner written consent email chain attached to Zoho CRM Deal.",
-      mandatoryGate: true,
-    },
-    {
-      id: `task-${ts}-3`,
-      sopCode: "SOP-LEG-03",
-      title: `${isScratch ? "Lottery Prohibition & Prize Act Statutory Audit" : "Consumer Protection Act & Direct Reward Legal Review"}`,
-      aspect: "legal",
-      assignee: "Prashant Mittal",
-      role: "Legal Head",
-      urgency: "HIGH",
-      tat: "2 Days",
-      status: "IN_PROGRESS",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "In Progress",
-      details: `Audit ${meta.name} mechanics against state-specific regulations (including Tamil Nadu Prize Schemes Act & consumer DPDP requirements for ${meta.client}).`,
-      verificationRequirement: "State compliance legal memo signed by Legal Head.",
-      mandatoryGate: true,
-    },
+  const isMerchandise =
+    meta.rewardType === "Merchandise" ||
+    /merchandise|hamper|jersey|physical|t-shirt|bottle|kit|warehouse|courier|dispatch/i.test(contextStr);
 
-    // ── COMPLIANCE ASPECT (3 Tasks) ──
-    {
-      id: `task-${ts}-4`,
-      sopCode: "SOP-CMP-01",
-      title: `TRAI / Vilpower DLT SMS Header & Template Approval for ${meta.client}`,
-      aspect: "compliance",
-      assignee: "Khaleel Ahmed",
-      role: "Compliance SPOC",
-      urgency: "HIGHEST",
-      tat: "2 Days",
-      status: "IN_PROGRESS",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "In Progress",
-      details: `Whitelist Principal Entity ID, registered SMS Header and OTP/Reward message templates for ${meta.name} on Vilpower & Jio DLT portals.`,
-      verificationRequirement: "DLT Portal Approval ID & Whitelisted Template Hash.",
-      mandatoryGate: true,
-    },
-    {
-      id: `task-${ts}-5`,
-      sopCode: "SOP-CMP-02",
-      title: `Anti-Fraud Mobile Velocity Cap & VOIP Blacklist for ${meta.name}`,
-      aspect: "compliance",
-      assignee: "Sachin (Tech Team)",
-      role: "Security Lead",
-      urgency: "HIGH",
-      tat: "1 Day",
-      status: "IN_PROGRESS",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "In Progress",
-      details: `Enforce strict fraud caps (Max 2 claims total per mobile number, device fingerprinting, and blacklisted virtual VOIP prefix blocking) across ${meta.codeVolume}.`,
-      verificationRequirement: "Rule engine unit test log & security sign-off.",
-      mandatoryGate: false,
-    },
-    {
-      id: `task-${ts}-6`,
-      sopCode: "SOP-CMP-03",
-      title: `72-Hour Pre-Launch Staging UAT Sign-Off (${meta.name})`,
-      aspect: "compliance",
-      assignee: "Khaleel Ahmed",
-      role: "Compliance SPOC",
-      urgency: "HIGHEST",
-      tat: "3 Days",
-      status: "PENDING_SIGN_OFF",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "Open",
-      details: `Execute 50-number multi-device end-to-end redemption test run across Airtel, Jio, and Vi networks with live ${partnerLabel} disbursement 72h prior to Go-Live.`,
-      verificationRequirement: "Signed UAT Test Matrix with zero open P1 defects.",
-      mandatoryGate: true,
-    },
+  const isDining =
+    !isScratch &&
+    !isMerchandise &&
+    (meta.category === "QSR" ||
+      /dining|restaurant|cafe|dineout|table\s*reservation|meal\s*pass/i.test(contextStr));
 
-    // ── ACCOUNTING ASPECT (3 Tasks) ──
-    {
-      id: `task-${ts}-7`,
-      sopCode: "SOP-ACC-01",
-      title: `100% Advance Escrow Verification of ${meta.budget} in Zoho Books`,
-      aspect: "accounting",
-      assignee: "Sneha Nair",
-      role: "Finance Lead",
-      urgency: "HIGHEST",
-      tat: "1 Day",
-      status: "COMPLETED",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "Closed",
-      details: `Verify client deposit of ${meta.budget} in BigCity escrow from ${meta.client} before reward inventory PO issuance. Match against Zoho Books receipt.`,
-      verificationRequirement: "Zoho Books Bank Credit Reconciliation Voucher.",
-      mandatoryGate: true,
-    },
-    {
-      id: `task-${ts}-8`,
-      sopCode: "SOP-ACC-02",
-      title: `Commercial SOW & Estimate Sign-Off — ${meta.client}`,
-      aspect: "accounting",
-      assignee: "Rohit Sharma",
-      role: "Admin / Commercial Head",
-      urgency: "HIGH",
-      tat: "2 Days",
-      status: "COMPLETED",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "Closed",
-      details: `Verify BigCity management fees, GST breakdown, SMS cost per unit for ${meta.codeVolume}, and printer logistics in Zoho Books Estimate.`,
-      verificationRequirement: "Signed Client Purchase Order (PO) linked to Zoho Books Estimate.",
-      mandatoryGate: true,
-    },
-    {
-      id: `task-${ts}-9`,
-      sopCode: "SOP-ACC-03",
-      title: `TDS Section 194B Tax Ledger Setup in Zoho Books`,
-      aspect: "accounting",
-      assignee: "Sneha Nair",
-      role: "Finance Lead",
-      urgency: "NORMAL",
-      tat: "2 Days",
-      status: "IN_PROGRESS",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "In Progress",
-      details: `Configure automated PAN collection & 30% TDS deduction workflow in Zoho Books for individual reward values exceeding statutory limits.`,
-      verificationRequirement: "Zoho Books Tax Chart of Accounts entry.",
-      mandatoryGate: false,
-    },
+  const isRetail =
+    !isScratch &&
+    !isMerchandise &&
+    !isDining &&
+    (meta.category === "Retail" ||
+      /retail\s*store|in-store|outlet\s*voucher|cashier|pos\s*scanner|pos\s*barcode|wardrobe|shopping\s*spree/i.test(contextStr));
 
-    // ── IMPLEMENTATION & TECH OPS (4 Tasks) ──
-    {
-      id: `task-${ts}-10`,
-      sopCode: "SOP-IMP-01",
-      title: `Generate ${meta.codeVolume} Cryptographic QR Batch with SHA-256 Checksum`,
-      aspect: "implementation",
-      assignee: "Khaleel Ahmed",
-      role: "Ops Lead",
-      urgency: "HIGHEST",
-      tat: "2 Days",
-      status: "IN_PROGRESS",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "In Progress",
-      details: `Generate ${meta.codeVolume} unique 10-character alphanumeric cryptographic codes and verify printer bleed margins with ${meta.client} packaging vendor.`,
-      verificationRequirement: "SHA-256 hash export sign-off and printer proof approval.",
-      mandatoryGate: true,
-    },
-    {
-      id: `task-${ts}-11`,
-      sopCode: "SOP-IMP-02",
-      title: `Deploy High-Concurrency AWS CDN Portal for ${meta.name}`,
-      aspect: "implementation",
-      assignee: "Sachin (Tech Team)",
-      role: "Tech Lead",
-      urgency: "HIGH",
-      tat: "3 Days",
-      status: "IN_PROGRESS",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "In Progress",
-      details: `Deploy responsive mobile-first redemption portal with BigCity CDN, web analytics, SSL certificate, and ${meta.client} custom brand assets.`,
-      verificationRequirement: "Staging URL live with green SSL cert and load test report.",
-      mandatoryGate: true,
-    },
-    {
-      id: `task-${ts}-12`,
-      sopCode: "SOP-IMP-03",
-      title: `Dual-Gateway Karix / Gupshup Failover Setup with 30s Heartbeat`,
-      aspect: "implementation",
-      assignee: "Sachin (Tech Team)",
-      role: "Tech Lead",
-      urgency: "HIGHEST",
-      tat: "1 Day",
-      status: "IN_PROGRESS",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "In Progress",
-      details: `Configure primary Karix route with automatic fallback to Gupshup if SMS latency exceeds 400ms during live marketing spikes for ${meta.name}.`,
-      verificationRequirement: "Automated gateway failover drill test pass.",
-      mandatoryGate: true,
-    },
-    {
-      id: `task-${ts}-13`,
-      sopCode: "SOP-IMP-04",
-      title: `Automated Daily 09:00 AM MIS Cadence for ${meta.client}`,
-      aspect: "implementation",
-      assignee: "Khaleel Ahmed",
-      role: "Ops Lead",
-      urgency: "NORMAL",
-      tat: "2 Days",
-      status: "IN_PROGRESS",
-      zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
-      zohoCrmTaskStatus: "In Progress",
-      details: `Set up automated daily 09:00 AM executive email MIS report to ${meta.client} brand managers tracking redemptions, ${meta.budget} budget utilization, and partner status.`,
-      verificationRequirement: "Specimen MIS template approved by CS Head.",
-      mandatoryGate: false,
-    },
-  ];
+  const isEGV =
+    !isScratch &&
+    !isMerchandise &&
+    !isDining &&
+    !isRetail &&
+    (meta.rewardType === "EGV" ||
+      /egv|gift\s*card|voucher|amazon|flipkart|myntra|croma|swiggy\s*money|uber/i.test(contextStr));
+
+  const partnerLabel =
+    meta.partner ||
+    (isDining
+      ? "Zomato / Dineout"
+      : isRetail
+      ? `${meta.client} Store Network`
+      : isScratch
+      ? "BigCity Scratch Portal"
+      : isMerchandise
+      ? "Fulfillment & Logistics Network"
+      : isEGV
+      ? "Amazon Pay / Brand Aggregator"
+      : "UPI / NPCI");
+
+  let tasks: AspectTask[] = [];
+  let recommendedTAT = "10 Working Days";
+  let criticalPath: string[] = [];
+  let aiAnalysis = "";
+
+  if (isDining) {
+    tasks = [
+      {
+        id: `task-${ts}-1`,
+        sopCode: "SOP-LEG-01",
+        title: `${meta.name} — Restaurant Merchant Partner Master Agreement`,
+        aspect: "legal",
+        assignee: "Prashant Mittal",
+        role: "Legal Head",
+        urgency: "HIGHEST",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Draft bilateral affiliate partner agreement between BigCity Promotions and ${partnerLabel} for ${meta.client}. Define discount coverage, bill eligibility thresholds, customer dispute mediation, and merchant reimbursement cycles.`,
+        verificationRequirement: "Bilateral Merchant Master Agreement executed by BigCity Legal.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-2`,
+        sopCode: "SOP-LEG-02",
+        title: `${partnerLabel} Brand Asset & POS Co-Marketing Clearances`,
+        aspect: "legal",
+        assignee: "Akash Verma",
+        role: "Legal Counsel",
+        urgency: "HIGH",
+        tat: "2 Days",
+        status: "PENDING_APPROVAL",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Open",
+        details: `Secure formal written trademark license for displaying ${partnerLabel} brand assets on ${meta.client} customer mobile vouchers and table tent cards across dining outlets.`,
+        verificationRequirement: "Written partner brand clearance email attached to Deal.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-3`,
+        sopCode: "SOP-LEG-03",
+        title: `Blackout Dates & Consumer Dining Protection Disclaimer Clearance`,
+        aspect: "legal",
+        assignee: "Prashant Mittal",
+        role: "Legal Head",
+        urgency: "HIGH",
+        tat: "1 Day",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Vet consumer terms clarifying holiday blackout dates (New Year Eve, Valentine's Day), minimum table covers, alcohol exclusions, and non-cumulative discount terms for ${meta.client}.`,
+        verificationRequirement: "Published legal disclaimer document signed off.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-4`,
+        sopCode: "SOP-CMP-01",
+        title: `Pan-India Restaurant Outlet Onboarding & Cashier Desk-Aid Manual`,
+        aspect: "compliance",
+        assignee: "Khaleel Ahmed",
+        role: "Compliance SPOC",
+        urgency: "HIGHEST",
+        tat: "3 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Formulate standard operating procedure and desk cheat-sheet for participating restaurant manager POS scanning, table voucher redemption, and manual PIN validation.`,
+        verificationRequirement: "Signed Store Operations Manual approved by Operations Lead.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-5`,
+        sopCode: "SOP-CMP-02",
+        title: `Restaurant Mystery Dining Audit & Service SLA Protocol`,
+        aspect: "compliance",
+        assignee: "Khaleel Ahmed",
+        role: "Ops Lead",
+        urgency: "HIGH",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Establish mystery customer audit protocol across sample participating dining outlets to verify voucher acceptance without refusal or bill manipulation.`,
+        verificationRequirement: "Audit compliance checklist and field escalation matrix approved.",
+        mandatoryGate: false,
+      },
+      {
+        id: `task-${ts}-6`,
+        sopCode: "SOP-CMP-03",
+        title: `72-Hour Pre-Launch End-to-End Dining Voucher UAT Sign-Off`,
+        aspect: "compliance",
+        assignee: "Sachin (Tech Team)",
+        role: "Tech Team",
+        urgency: "HIGHEST",
+        tat: "2 Days",
+        status: "PENDING_SIGN_OFF",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Open",
+        details: `Execute live redemption drills across 10 partner restaurants with test vouchers, verifying bill split calculations, instant discount SMS, and table settlement.`,
+        verificationRequirement: "Staging UAT report signed with zero open P1 defects.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-7`,
+        sopCode: "SOP-ACC-01",
+        title: `100% Advance Escrow Deposit Verification of ${meta.budget} in Zoho Books`,
+        aspect: "accounting",
+        assignee: "Sneha Nair",
+        role: "Finance Lead",
+        urgency: "HIGHEST",
+        tat: "1 Day",
+        status: "COMPLETED",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Closed",
+        details: `Confirm client advance receipt of ${meta.budget} in BigCity escrow from ${meta.client} prior to issuing merchant credit commitments.`,
+        verificationRequirement: "Zoho Books Bank Credit Reconciliation Voucher.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-8`,
+        sopCode: "SOP-ACC-02",
+        title: `Merchant Outlet Commission & Clearing Ledger Setup in Zoho Books`,
+        aspect: "accounting",
+        assignee: "Sneha Nair",
+        role: "Finance Lead",
+        urgency: "HIGH",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Set up automated weekly restaurant credit clearing account in Zoho Books to disburse dining claim reimbursements and reconcile BigCity management fees.`,
+        verificationRequirement: "Zoho Books Merchant Chart of Accounts entry.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-9`,
+        sopCode: "SOP-ACC-03",
+        title: `Commercial PO & Estimate Sign-Off — ${meta.client}`,
+        aspect: "accounting",
+        assignee: "Rohit Sharma",
+        role: "Admin / Commercial Head",
+        urgency: "NORMAL",
+        tat: "2 Days",
+        status: "COMPLETED",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Closed",
+        details: `Finalize client PO matching Zoho Books estimate for ${meta.budget}, covering diner subsidies, SMS fee, and platform service fees.`,
+        verificationRequirement: "Signed Client Purchase Order linked to Zoho Books Estimate.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-10`,
+        sopCode: "SOP-IMP-01",
+        title: `Deploy Mobile Dining Voucher Redemption Portal for ${meta.name}`,
+        aspect: "implementation",
+        assignee: "Sachin (Tech Team)",
+        role: "Tech Lead",
+        urgency: "HIGHEST",
+        tat: "3 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Build and deploy mobile-first dining pass wallet portal with geo-location outlet finder, digital voucher barcode, and countdown redemption timer.`,
+        verificationRequirement: "Production portal live with SSL certification and mobile responsiveness pass.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-11`,
+        sopCode: "SOP-IMP-02",
+        title: `Restaurant Partner POS Validation API & Webhook Integration`,
+        aspect: "implementation",
+        assignee: "Sachin (Tech Team)",
+        role: "Tech Lead",
+        urgency: "HIGH",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Configure merchant PIN verification webhook and POS tablet barcode scanner route with 300ms latency SLA for ${meta.codeVolume} diners.`,
+        verificationRequirement: "API integration test pass with automated duplicate redemption blocking.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-12`,
+        sopCode: "SOP-IMP-03",
+        title: `Daily 09:00 AM Outlet-Wise Redemption MIS Cadence for ${meta.client}`,
+        aspect: "implementation",
+        assignee: "Khaleel Ahmed",
+        role: "Ops Lead",
+        urgency: "NORMAL",
+        tat: "1 Day",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Configure automated daily 09:00 AM executive report for ${meta.client} brand managers tracking outlet redemptions, footfalls, and ${meta.budget} budget utilization.`,
+        verificationRequirement: "Specimen MIS approved by CS Head.",
+        mandatoryGate: false,
+      },
+    ];
+    recommendedTAT = "10 Working Days";
+    criticalPath = [
+      `100% Advance Escrow Verification of ${meta.budget} in Zoho Books`,
+      `${partnerLabel} Brand Asset & POS Co-Marketing Clearances`,
+      `Pan-India Restaurant Outlet Onboarding & Cashier Desk-Aid Manual`,
+      `72-Hour Pre-Launch End-to-End Dining Voucher UAT Sign-Off`,
+    ];
+    aiAnalysis = `### 🍽️ AI Dining & Restaurant Campaign Assessment: **${meta.name}**\n\n**Client**: ${meta.client} · **Budget**: ${meta.budget} · **Volume**: ${meta.codeVolume} · **Partner**: ${partnerLabel}\n\n* **Merchant Network**: Multi-outlet restaurant POS verification with manual cashier PIN fallback.\n* **Consumer Protection**: Blackout date exclusions clearly vetted to prevent weekend dinner disputes.\n* **Escrow Accounting**: Advance deposit in Zoho Books with weekly automated merchant billing ledger.`;
+  } else if (isRetail) {
+    tasks = [
+      {
+        id: `task-${ts}-1`,
+        sopCode: "SOP-LEG-01",
+        title: `${meta.name} — Retail Brand Partnership & Co-Marketing Agreement`,
+        aspect: "legal",
+        assignee: "Prashant Mittal",
+        role: "Legal Head",
+        urgency: "HIGHEST",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Draft and execute the bilateral retail partnership agreement for ${meta.client}. Define voucher liability limits, store brand guideline usage, store cashier dispute arbitration, and redemption terms across all store outlets.`,
+        verificationRequirement: "Signed and stamped bilateral agreement by authorized signatories of BigCity and ${meta.client}.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-2`,
+        sopCode: "SOP-LEG-02",
+        title: `In-Store Voucher Terms, Exclusions & Minimum Spend Vetting`,
+        aspect: "legal",
+        assignee: "Akash Verma",
+        role: "Legal Counsel",
+        urgency: "HIGH",
+        tat: "2 Days",
+        status: "PENDING_APPROVAL",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Open",
+        details: `Draft exhaustive consumer-facing terms governing in-store discount voucher redemption across ${meta.client} retail outlets. Specify minimum bill spend criteria, 1 voucher per transaction cap, and return/exchange adjustments.`,
+        verificationRequirement: "Approved legal disclaimer document sign-off and embedding into promotional collateral.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-3`,
+        sopCode: "SOP-LEG-03",
+        title: `Consumer Rights & Store Employee Fraud Liability Clearance`,
+        aspect: "legal",
+        assignee: "Prashant Mittal",
+        role: "Legal Head",
+        urgency: "HIGH",
+        tat: "1 Day",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Formulate employee fraud prevention rules and audit guidelines safeguarding against unauthorized internal voucher redemption by retail store personnel.`,
+        verificationRequirement: "Retail compliance legal memo signed by Legal Head.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-4`,
+        sopCode: "SOP-CMP-01",
+        title: `Pan-India Store Staff SOP & Cashier POS Training Manual for ${meta.client}`,
+        aspect: "compliance",
+        assignee: "Khaleel Ahmed",
+        role: "Compliance SPOC",
+        urgency: "HIGHEST",
+        tat: "3 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Formulate cashier desk-aid and standard operational procedure (SOP) manual for ${meta.client} retail outlets. Detail step-by-step POS barcode/alphanumeric code scanning, instant bill discounting validation, and exception handling.`,
+        verificationRequirement: "Store Operations Head sign-off on the Store Training Manual and POS desk cheat-sheet.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-5`,
+        sopCode: "SOP-CMP-02",
+        title: `Anti-Fraud Barcode Velocity Rule Engine & Duplicate Scan Blocker`,
+        aspect: "compliance",
+        assignee: "Sachin (Tech Team)",
+        role: "Security Lead",
+        urgency: "HIGH",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Enforce real-time duplicate scan prevention (instant single-use invalidation within 100ms) and mobile number velocity caps across ${meta.codeVolume}.`,
+        verificationRequirement: "Rule engine unit test log & security sign-off.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-6`,
+        sopCode: "SOP-CMP-03",
+        title: `72-Hour Multi-Store POS Pilot Simulation & UAT Sign-Off`,
+        aspect: "compliance",
+        assignee: "Khaleel Ahmed",
+        role: "Ops Lead",
+        urgency: "HIGHEST",
+        tat: "2 Days",
+        status: "PENDING_SIGN_OFF",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Open",
+        details: `Conduct live simulated cashier billing runs across 5 flagship retail stores to verify scanner optics, offline caching resilience, and instant customer SMS delivery.`,
+        verificationRequirement: "Store Pilot UAT sign-off matrix with zero open defects.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-7`,
+        sopCode: "SOP-ACC-01",
+        title: `100% Advance Escrow Verification of ${meta.budget} in Zoho Books`,
+        aspect: "accounting",
+        assignee: "Sneha Nair",
+        role: "Finance Lead",
+        urgency: "HIGHEST",
+        tat: "1 Day",
+        status: "COMPLETED",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Closed",
+        details: `Verify client deposit of ${meta.budget} in BigCity escrow from ${meta.client} before voucher code pool activation in POS engine.`,
+        verificationRequirement: "Zoho Books Bank Credit Reconciliation Voucher.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-8`,
+        sopCode: "SOP-ACC-02",
+        title: `Retail Store Credit Note Settlement & Margin Ledger in Zoho Books`,
+        aspect: "accounting",
+        assignee: "Sneha Nair",
+        role: "Finance Lead",
+        urgency: "HIGH",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Establish credit note reconciliation workflow in Zoho Books to settle store-level voucher discounts against client commercial billing.`,
+        verificationRequirement: "Zoho Books Chart of Accounts retail settlement structure.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-9`,
+        sopCode: "SOP-ACC-03",
+        title: `Commercial PO & Estimate Sign-Off — ${meta.client}`,
+        aspect: "accounting",
+        assignee: "Rohit Sharma",
+        role: "Admin / Commercial Head",
+        urgency: "NORMAL",
+        tat: "2 Days",
+        status: "COMPLETED",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Closed",
+        details: `Verify BigCity campaign management fees, SMS per-unit dispatch charges for ${meta.codeVolume}, and store collaterals in Zoho Books Estimate.`,
+        verificationRequirement: "Signed Client Purchase Order linked to Zoho Books Estimate.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-10`,
+        sopCode: "SOP-IMP-01",
+        title: `Generate ${meta.codeVolume} Encrypted Unique Barcodes & EAN-13 Codes`,
+        aspect: "implementation",
+        assignee: "Khaleel Ahmed",
+        role: "Ops Lead",
+        urgency: "HIGHEST",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Generate ${meta.codeVolume} encrypted 12-character alphanumeric and EAN-13 barcode strings compatible with ${meta.client} POS laser scanners.`,
+        verificationRequirement: "Batch barcode checksum export pass and scanner readability sign-off.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-11`,
+        sopCode: "SOP-IMP-02",
+        title: `Real-Time Cashier POS Webhook & Store-Level De-duplication Sandbox`,
+        aspect: "implementation",
+        assignee: "Sachin (Tech Team)",
+        role: "Tech Lead",
+        urgency: "HIGHEST",
+        tat: "3 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Deploy low-latency (sub-250ms) redemption validation webhook connecting store billing POS terminals to BigCity central voucher ledger.`,
+        verificationRequirement: "Sandbox POS load test pass with 1000 concurrent transactions/sec.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-12`,
+        sopCode: "SOP-IMP-03",
+        title: `Automated Daily 09:00 AM Store-Wise MIS & Footfall Tracking for ${meta.client}`,
+        aspect: "implementation",
+        assignee: "Khaleel Ahmed",
+        role: "Ops Lead",
+        urgency: "NORMAL",
+        tat: "1 Day",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Configure automated daily 09:00 AM executive report for ${meta.client} retail brand heads breaking down redemptions by city, store outlet, and budget consumption.`,
+        verificationRequirement: "Specimen retail MIS approved by Operations Lead.",
+        mandatoryGate: false,
+      },
+    ];
+    recommendedTAT = "11 Working Days";
+    criticalPath = [
+      `100% Advance Escrow Verification of ${meta.budget} in Zoho Books`,
+      `Pan-India Store Staff SOP & Cashier POS Training Manual for ${meta.client}`,
+      `Generate ${meta.codeVolume} Encrypted Unique Barcodes & EAN-13 Codes`,
+      `Real-Time Cashier POS Webhook & Store-Level De-duplication Sandbox`,
+      `72-Hour Multi-Store POS Pilot Simulation & UAT Sign-Off`,
+    ];
+    aiAnalysis = `### 🛍️ AI Retail Store Campaign Architecture: **${meta.name}**\n\n**Client**: ${meta.client} · **Budget**: ${meta.budget} · **Volume**: ${meta.codeVolume} · **Network**: ${partnerLabel}\n\n* **POS Integration**: Real-time EAN-13 barcode validation with 250ms latency SLA to eliminate checkout queues.\n* **Store Staff Training**: Pan-India cashier desk-aid and manual override protocol.\n* **Escrow & Credit Settlement**: 100% advance deposit in Zoho Books with store credit note settlement tracking.`;
+  } else if (isScratch) {
+    tasks = [
+      {
+        id: `task-${ts}-1`,
+        sopCode: "SOP-LEG-01",
+        title: `${meta.name} — Master Contest Rules & Disclaimer Drafting`,
+        aspect: "legal",
+        assignee: "Prashant Mittal",
+        role: "Legal Head",
+        urgency: "HIGHEST",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Draft contest rules, eligibility restrictions, winner selection methodology, and dispute resolution guidelines for ${meta.client}.`,
+        verificationRequirement: "Signed Master Contest Legal Framework.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-2`,
+        sopCode: "SOP-LEG-02",
+        title: `Tamil Nadu Prize Schemes Act & State Lottery Prohibition Legal Memo`,
+        aspect: "legal",
+        assignee: "Prashant Mittal",
+        role: "Legal Head",
+        urgency: "HIGHEST",
+        tat: "2 Days",
+        status: "PENDING_APPROVAL",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Open",
+        details: `Formulate statutory compliance memo certifying campaign mechanics satisfy exemptions under Tamil Nadu Prize Schemes (Prohibition) Act and state-level game of skill/chance regulations.`,
+        verificationRequirement: "State statutory compliance legal opinion signed by Legal Head.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-3`,
+        sopCode: "SOP-LEG-03",
+        title: `Independent Auditor Draw Supervision Protocol & Legal Indemnity`,
+        aspect: "legal",
+        assignee: "Akash Verma",
+        role: "Legal Counsel",
+        urgency: "HIGH",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Draft formal protocol for third-party Chartered Accountant supervision during prize draws and winner verification.`,
+        verificationRequirement: "Auditor agreement and supervision protocol signed.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-4`,
+        sopCode: "SOP-CMP-01",
+        title: `Tamper-Proof Scratch Foil Security & Printer Plant Audit for ${meta.client}`,
+        aspect: "compliance",
+        assignee: "Khaleel Ahmed",
+        role: "Compliance SPOC",
+        urgency: "HIGHEST",
+        tat: "3 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Conduct on-site or certified security audit of packaging print vendor. Verify scratch-off latex opacity, infrared non-transparency, and clean room destruction of defective prints for ${meta.codeVolume}.`,
+        verificationRequirement: "Printer security compliance certificate signed by packaging vendor and BigCity Ops.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-5`,
+        sopCode: "SOP-CMP-02",
+        title: `Winner KYC (PAN & Aadhaar) Authentication SLA & Anti-Fraud Gates`,
+        aspect: "compliance",
+        assignee: "Sachin (Tech Team)",
+        role: "Security Lead",
+        urgency: "HIGH",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Configure automated KYC portal for high-value prize claims (>₹10,000). Integrate NSDL PAN verification and deduplication against mobile numbers.`,
+        verificationRequirement: "KYC workflow unit test sign-off.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-6`,
+        sopCode: "SOP-CMP-03",
+        title: `72-Hour Pre-Launch Live Draw & Webhook Simulation UAT`,
+        aspect: "compliance",
+        assignee: "Khaleel Ahmed",
+        role: "Ops Lead",
+        urgency: "HIGHEST",
+        tat: "2 Days",
+        status: "PENDING_SIGN_OFF",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Open",
+        details: `Run end-to-end simulated scratch reveal, winning probability algorithm verification, and instant winner notification across all telecom carriers.`,
+        verificationRequirement: "Signed UAT test run with algorithmic fairness audit.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-7`,
+        sopCode: "SOP-ACC-01",
+        title: `100% Advance Prize Pool Escrow Verification in Zoho Books`,
+        aspect: "accounting",
+        assignee: "Sneha Nair",
+        role: "Finance Lead",
+        urgency: "HIGHEST",
+        tat: "1 Day",
+        status: "COMPLETED",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Closed",
+        details: `Verify client deposit of ${meta.budget} in BigCity escrow from ${meta.client} before prize inventory procurement and code distribution.`,
+        verificationRequirement: "Zoho Books Bank Credit Reconciliation Voucher.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-8`,
+        sopCode: "SOP-ACC-02",
+        title: `TDS Section 194B (30% Withholding) Tax Ledger Setup in Zoho Books`,
+        aspect: "accounting",
+        assignee: "Sneha Nair",
+        role: "Finance Lead",
+        urgency: "HIGH",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Configure automated PAN collection & 30% TDS deduction workflow in Zoho Books for individual reward values exceeding statutory ₹10,000 threshold.`,
+        verificationRequirement: "Zoho Books Tax Chart of Accounts entry.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-9`,
+        sopCode: "SOP-ACC-03",
+        title: `Commercial PO & Reward Procurement Sign-Off — ${meta.client}`,
+        aspect: "accounting",
+        assignee: "Rohit Sharma",
+        role: "Admin / Commercial Head",
+        urgency: "NORMAL",
+        tat: "2 Days",
+        status: "COMPLETED",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Closed",
+        details: `Verify client PO for ${meta.budget} budget, covering prize procurement costs, auditor fees, SMS routing, and BigCity management margin.`,
+        verificationRequirement: "Signed Client Purchase Order linked to Zoho Books Estimate.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-10`,
+        sopCode: "SOP-IMP-01",
+        title: `Generate ${meta.codeVolume} Cryptographic PIN Batch with SHA-256 Checksum`,
+        aspect: "implementation",
+        assignee: "Khaleel Ahmed",
+        role: "Ops Lead",
+        urgency: "HIGHEST",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Generate ${meta.codeVolume} unique 10-character alphanumeric cryptographic codes and verify printer bleed margins with ${meta.client} packaging vendor.`,
+        verificationRequirement: "SHA-256 hash export sign-off and printer proof approval.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-11`,
+        sopCode: "SOP-IMP-02",
+        title: `Deploy High-Concurrency Scratch & Reveal Microsite with Karix Failover`,
+        aspect: "implementation",
+        assignee: "Sachin (Tech Team)",
+        role: "Tech Lead",
+        urgency: "HIGHEST",
+        tat: "3 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Deploy responsive scratch-to-reveal mobile portal with canvas animation, anti-bot Cloudflare Turnstile, and dual-gateway Karix/Gupshup SMS alerts.`,
+        verificationRequirement: "Staging portal live with green SSL cert and load test report.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-12`,
+        sopCode: "SOP-IMP-03",
+        title: `Daily 09:00 AM Winner Draw Ledger & MIS Dispatch for ${meta.client}`,
+        aspect: "implementation",
+        assignee: "Khaleel Ahmed",
+        role: "Ops Lead",
+        urgency: "NORMAL",
+        tat: "1 Day",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Configure automated daily 09:00 AM executive report to ${meta.client} brand managers tracking scratch redemptions, winners ledger, and prize budget utilization.`,
+        verificationRequirement: "Specimen MIS template approved by CS Head.",
+        mandatoryGate: false,
+      },
+    ];
+    recommendedTAT = "12 Working Days";
+    criticalPath = [
+      `100% Advance Prize Pool Escrow Verification in Zoho Books`,
+      `Tamil Nadu Prize Schemes Act & State Lottery Prohibition Legal Memo`,
+      `Tamper-Proof Scratch Foil Security & Printer Plant Audit for ${meta.client}`,
+      `Generate ${meta.codeVolume} Cryptographic PIN Batch with SHA-256 Checksum`,
+      `72-Hour Pre-Launch Live Draw & Webhook Simulation UAT`,
+    ];
+    aiAnalysis = `### 🎟️ AI Scratch & Win Campaign Architecture: **${meta.name}**\n\n**Client**: ${meta.client} · **Budget**: ${meta.budget} · **Volume**: ${meta.codeVolume}\n\n* **Statutory Clearance**: Formally exempted under Tamil Nadu Prize Schemes Act via skill/direct reward review.\n* **Physical Security**: Tamper-proof packaging audit and SHA-256 batch cryptographic hashing.\n* **Tax Compliance**: TDS Section 194B 30% withholding ledger configured in Zoho Books.`;
+  } else if (isMerchandise) {
+    tasks = [
+      {
+        id: `task-${ts}-1`,
+        sopCode: "SOP-LEG-01",
+        title: `${meta.name} — Master Merchandise Fulfillment Agreement`,
+        aspect: "legal",
+        assignee: "Prashant Mittal",
+        role: "Legal Head",
+        urgency: "HIGHEST",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Draft bilateral fulfillment and procurement agreement for ${meta.client}. Define delivery SLAs, courier transit liability, manufacturer defect remedies, and replacement timelines.`,
+        verificationRequirement: "Signed Master Fulfillment Agreement.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-2`,
+        sopCode: "SOP-LEG-02",
+        title: `Transit Damage Liability & Manufacturer Warranty Disclaimer`,
+        aspect: "legal",
+        assignee: "Akash Verma",
+        role: "Legal Counsel",
+        urgency: "HIGH",
+        tat: "2 Days",
+        status: "PENDING_APPROVAL",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Open",
+        details: `Vet consumer delivery policy detailing transit damage claim windows (48 hours from delivery), reverse pickup rules, and manufacturer warranty limits.`,
+        verificationRequirement: "Published customer delivery terms sign-off.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-3`,
+        sopCode: "SOP-LEG-03",
+        title: `Inter-State Goods Movement & E-Way Bill Regulatory Clearance`,
+        aspect: "legal",
+        assignee: "Prashant Mittal",
+        role: "Legal Head",
+        urgency: "HIGH",
+        tat: "1 Day",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Formulate statutory clearance for pan-India physical merchandise shipment, ensuring GST E-way bill compliance across state borders.`,
+        verificationRequirement: "Logistics tax compliance clearance memo.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-4`,
+        sopCode: "SOP-CMP-01",
+        title: `Warehouse Dispatch SLA Compliance & Transit Insurance Verification`,
+        aspect: "compliance",
+        assignee: "Khaleel Ahmed",
+        role: "Compliance SPOC",
+        urgency: "HIGHEST",
+        tat: "3 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Verify warehouse transit insurance coverage protecting against damage/pilferage and establish 48-hour order dispatch SLA protocol.`,
+        verificationRequirement: "Active transit insurance policy and warehouse SLA sign-off.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-5`,
+        sopCode: "SOP-CMP-02",
+        title: `Physical Merchandise Quality Inspection & Sample Sign-Off`,
+        aspect: "compliance",
+        assignee: "Khaleel Ahmed",
+        role: "Ops Lead",
+        urgency: "HIGH",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Conduct physical sample inspection of merchandise batches (packaging finish, brand logo printing, product defect rate <0.1%).`,
+        verificationRequirement: "Quality Assurance specimen approval report signed by Brand SPOC.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-6`,
+        sopCode: "SOP-CMP-03",
+        title: `72-Hour Pre-Launch Courier API Tracking & UAT Sign-Off`,
+        aspect: "compliance",
+        assignee: "Sachin (Tech Team)",
+        role: "Tech Team",
+        urgency: "HIGHEST",
+        tat: "2 Days",
+        status: "PENDING_SIGN_OFF",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Open",
+        details: `Execute end-to-end simulated order placement, automated AWB generation with BlueDart/Delhivery, and customer tracking SMS delivery.`,
+        verificationRequirement: "Signed Courier Integration UAT report.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-7`,
+        sopCode: "SOP-ACC-01",
+        title: `100% Advance Procurement Escrow of ${meta.budget} in Zoho Books`,
+        aspect: "accounting",
+        assignee: "Sneha Nair",
+        role: "Finance Lead",
+        urgency: "HIGHEST",
+        tat: "1 Day",
+        status: "COMPLETED",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Closed",
+        details: `Confirm client advance deposit of ${meta.budget} in BigCity escrow before issuing physical production and packaging POs to suppliers.`,
+        verificationRequirement: "Zoho Books Bank Credit Reconciliation Voucher.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-8`,
+        sopCode: "SOP-ACC-02",
+        title: `Logistics & Inter-State GST E-Way Bill Ledger in Zoho Books`,
+        aspect: "accounting",
+        assignee: "Sneha Nair",
+        role: "Finance Lead",
+        urgency: "HIGH",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Configure shipping expense tracking and input tax credit (ITC) reconciliation in Zoho Books for nationwide freight logistics.`,
+        verificationRequirement: "Zoho Books Logistics Chart of Accounts entry.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-9`,
+        sopCode: "SOP-ACC-03",
+        title: `Commercial Terms & Manufacturer PO Sign-Off — ${meta.client}`,
+        aspect: "accounting",
+        assignee: "Rohit Sharma",
+        role: "Admin / Commercial Head",
+        urgency: "NORMAL",
+        tat: "2 Days",
+        status: "COMPLETED",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Closed",
+        details: `Verify client PO matching Zoho Books estimate for ${meta.budget}, covering physical merchandise unit cost, warehousing, and freight.`,
+        verificationRequirement: "Signed Client Purchase Order linked to Zoho Books Estimate.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-10`,
+        sopCode: "SOP-IMP-01",
+        title: `Warehouse Packaging & Address Verification Engine Integration`,
+        aspect: "implementation",
+        assignee: "Sachin (Tech Team)",
+        role: "Tech Lead",
+        urgency: "HIGHEST",
+        tat: "3 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Deploy address validation engine on claim portal (pincode deliverability check against 19,000+ Indian pincodes and mobile OTP confirmation).`,
+        verificationRequirement: "Address validation API pass with automated non-serviceable pincode handling.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-11`,
+        sopCode: "SOP-IMP-02",
+        title: `Courier Partner (BlueDart / Delhivery) Dispatch Webhook Integration`,
+        aspect: "implementation",
+        assignee: "Sachin (Tech Team)",
+        role: "Tech Lead",
+        urgency: "HIGH",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Integrate logistics webhook to receive automated dispatch, in-transit, out-for-delivery, and delivered scan status updates.`,
+        verificationRequirement: "Live webhook receiving courier status events.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-12`,
+        sopCode: "SOP-IMP-03",
+        title: `Automated Customer Tracking SMS & Daily 09:00 AM Dispatch MIS`,
+        aspect: "implementation",
+        assignee: "Khaleel Ahmed",
+        role: "Ops Lead",
+        urgency: "NORMAL",
+        tat: "1 Day",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Configure automated SMS dispatch alerts containing live AWB tracking links and daily 09:00 AM executive dispatch summary for ${meta.client}.`,
+        verificationRequirement: "Specimen tracking SMS template approved by CS Head.",
+        mandatoryGate: false,
+      },
+    ];
+    recommendedTAT = "14 Working Days";
+    criticalPath = [
+      `100% Advance Procurement Escrow of ${meta.budget} in Zoho Books`,
+      `Physical Merchandise Quality Inspection & Sample Sign-Off`,
+      `Warehouse Packaging & Address Verification Engine Integration`,
+      `Courier Partner (BlueDart / Delhivery) Dispatch Webhook Integration`,
+      `72-Hour Pre-Launch Courier API Tracking & UAT Sign-Off`,
+    ];
+    aiAnalysis = `### 📦 AI Physical Merchandise Fulfillment Plan: **${meta.name}**\n\n**Client**: ${meta.client} · **Budget**: ${meta.budget} · **Volume**: ${meta.codeVolume}\n\n* **Logistics & Warehousing**: Direct BlueDart/Delhivery API integration with real-time pincode deliverability check.\n* **Sample Quality Sign-Off**: Mandatory QA inspection of physical samples before production run.\n* **Escrow Security**: 100% advance deposit in Zoho Books with inter-state E-way bill reconciliation.`;
+  } else if (isEGV) {
+    tasks = [
+      {
+        id: `task-${ts}-1`,
+        sopCode: "SOP-LEG-01",
+        title: `${meta.name} — Master Campaign Agreement & Co-Branding Terms`,
+        aspect: "legal",
+        assignee: "Prashant Mittal",
+        role: "Legal Head",
+        urgency: "HIGHEST",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Draft bilateral campaign agreement between BigCity Promotions and ${meta.client}. Define digital voucher distribution terms, indemnification, and customer grievance redressal.`,
+        verificationRequirement: "Signed Master Campaign Agreement.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-2`,
+        sopCode: "SOP-LEG-02",
+        title: `${partnerLabel} Brand IP & Written Logo Usage Approval`,
+        aspect: "legal",
+        assignee: "Akash Verma",
+        role: "Legal Counsel",
+        urgency: "HIGHEST",
+        tat: "2 Days",
+        status: "PENDING_APPROVAL",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Open",
+        details: `Secure formal written brand IP consent from ${partnerLabel} for displaying logos across ${meta.client} marketing collaterals and digital redemption screens.`,
+        verificationRequirement: "Partner written consent email chain attached to Deal.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-3`,
+        sopCode: "SOP-LEG-03",
+        title: `E-Gift Card Expiry, Non-Encashment & Refund Exemption Disclaimer`,
+        aspect: "legal",
+        assignee: "Prashant Mittal",
+        role: "Legal Head",
+        urgency: "HIGH",
+        tat: "1 Day",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Vet consumer terms clarifying voucher expiry period, non-transferability to bank accounts, and merchant redemption policies for ${meta.client}.`,
+        verificationRequirement: "Approved legal disclaimer sign-off.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-4`,
+        sopCode: "SOP-CMP-01",
+        title: `Brand Safety & Code Velocity Guardrails (1 voucher per user cap)`,
+        aspect: "compliance",
+        assignee: "Khaleel Ahmed",
+        role: "Compliance SPOC",
+        urgency: "HIGHEST",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Establish automated redemption velocity caps (1 claim per mobile number/IP) and prevent bot-driven voucher scraping across ${meta.codeVolume}.`,
+        verificationRequirement: "Security velocity rule engine sign-off.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-5`,
+        sopCode: "SOP-CMP-02",
+        title: `TRAI / Vilpower DLT SMS Template Approval for Voucher Dispatch`,
+        aspect: "compliance",
+        assignee: "Khaleel Ahmed",
+        role: "Ops Lead",
+        urgency: "HIGH",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Whitelist DLT header and transactional SMS message templates containing dynamic voucher code variables on Vilpower portal.`,
+        verificationRequirement: "DLT Portal approval ID and registered template hash.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-6`,
+        sopCode: "SOP-CMP-03",
+        title: `72-Hour Pre-Launch Voucher Issuance Sandbox UAT Sign-Off`,
+        aspect: "compliance",
+        assignee: "Sachin (Tech Team)",
+        role: "Tech Lead",
+        urgency: "HIGHEST",
+        tat: "2 Days",
+        status: "PENDING_SIGN_OFF",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Open",
+        details: `Execute 50-number live redemption sandbox drill across Airtel, Jio, and Vi networks with real-time voucher code delivery and PIN verification.`,
+        verificationRequirement: "Signed UAT test matrix with zero defects.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-7`,
+        sopCode: "SOP-ACC-01",
+        title: `100% Advance Escrow Verification of ${meta.budget} in Zoho Books`,
+        aspect: "accounting",
+        assignee: "Sneha Nair",
+        role: "Finance Lead",
+        urgency: "HIGHEST",
+        tat: "1 Day",
+        status: "COMPLETED",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Closed",
+        details: `Verify client deposit of ${meta.budget} in BigCity escrow from ${meta.client} before bulk purchase PO issuance to voucher aggregators.`,
+        verificationRequirement: "Zoho Books Bank Credit Reconciliation Voucher.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-8`,
+        sopCode: "SOP-ACC-02",
+        title: `Bulk E-Gift Card Aggregator (Gyftr / Pine Labs) Wholesale PO Sign-Off`,
+        aspect: "accounting",
+        assignee: "Rohit Sharma",
+        role: "Admin / Commercial Head",
+        urgency: "HIGH",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Issue wholesale purchase order to voucher aggregator for ${meta.codeVolume} vouchers at pre-agreed discount margins and credit lines.`,
+        verificationRequirement: "Signed Wholesale Voucher PO.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-9`,
+        sopCode: "SOP-ACC-03",
+        title: `Commercial Terms & Estimate Sign-Off — ${meta.client}`,
+        aspect: "accounting",
+        assignee: "Rohit Sharma",
+        role: "Admin / Commercial Head",
+        urgency: "NORMAL",
+        tat: "2 Days",
+        status: "COMPLETED",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Closed",
+        details: `Verify client PO matching Zoho Books estimate for ${meta.budget}, covering voucher face value, SMS charges, and platform commission.`,
+        verificationRequirement: "Signed Client Purchase Order linked to Zoho Books Estimate.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-10`,
+        sopCode: "SOP-IMP-01",
+        title: `Instant Voucher Delivery API Integration (WhatsApp & SMS Routes)`,
+        aspect: "implementation",
+        assignee: "Sachin (Tech Team)",
+        role: "Tech Lead",
+        urgency: "HIGHEST",
+        tat: "3 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Integrate automated voucher dispatch engine with multi-channel delivery (primary WhatsApp template with SMS failover within 45 seconds).`,
+        verificationRequirement: "Delivery engine latency test pass (<3s average delivery).",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-11`,
+        sopCode: "SOP-IMP-02",
+        title: `Real-Time Voucher Inventory Low-Stock Alert System (<10% threshold)`,
+        aspect: "implementation",
+        assignee: "Sachin (Tech Team)",
+        role: "Tech Lead",
+        urgency: "HIGH",
+        tat: "1 Day",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Configure automated webhook alert notifying Finance and CS teams when active voucher inventory drops below 10% of total pool.`,
+        verificationRequirement: "Low-stock automated alert drill test pass.",
+        mandatoryGate: false,
+      },
+      {
+        id: `task-${ts}-12`,
+        sopCode: "SOP-IMP-03",
+        title: `Automated Daily 09:00 AM Voucher Issuance & Float Balance MIS`,
+        aspect: "implementation",
+        assignee: "Khaleel Ahmed",
+        role: "Ops Lead",
+        urgency: "NORMAL",
+        tat: "1 Day",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Configure automated daily 09:00 AM executive report for ${meta.client} brand managers tracking voucher dispatches, redemption rates, and budget balance.`,
+        verificationRequirement: "Specimen MIS template approved by CS Head.",
+        mandatoryGate: false,
+      },
+    ];
+    recommendedTAT = "9 Working Days";
+    criticalPath = [
+      `100% Advance Escrow Verification of ${meta.budget} in Zoho Books`,
+      `${partnerLabel} Brand IP & Written Logo Usage Approval`,
+      `Bulk E-Gift Card Aggregator (Gyftr / Pine Labs) Wholesale PO Sign-Off`,
+      `72-Hour Pre-Launch Voucher Issuance Sandbox UAT Sign-Off`,
+    ];
+    aiAnalysis = `### 🎁 AI E-Gift Voucher Campaign Architecture: **${meta.name}**\n\n**Client**: ${meta.client} · **Budget**: ${meta.budget} · **Volume**: ${meta.codeVolume} · **Partner**: ${partnerLabel}\n\n* **Wholesale Sourcing**: Bulk voucher aggregator procurement with pre-negotiated wholesale margin.\n* **Dual Dispatch Engine**: WhatsApp-first voucher delivery with automated SMS fallback within 45 seconds.\n* **Inventory Guardrails**: Real-time automated threshold alerts when available codes drop below 10%.`;
+  } else {
+    // Default: UPI / Direct Cashback
+    tasks = [
+      {
+        id: `task-${ts}-1`,
+        sopCode: "SOP-LEG-01",
+        title: `${meta.name} — Master Campaign Agreement & Cashback T&C Drafting`,
+        aspect: "legal",
+        assignee: "Prashant Mittal",
+        role: "Legal Head",
+        urgency: "HIGHEST",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Draft comprehensive legal T&C for ${meta.client} (${meta.name}). Specify eligibility window (${meta.startDate} to ${meta.endDate}), 1 claim per mobile/UPI ID cap, grievance redressal, and dispute resolution jurisdiction.`,
+        verificationRequirement: "Signed Master Campaign Agreement with client sign-off.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-2`,
+        sopCode: "SOP-LEG-02",
+        title: `NPCI UPI Payout Guidelines & RBI Wallet Statutory Clearances`,
+        aspect: "legal",
+        assignee: "Akash Verma",
+        role: "Legal Counsel",
+        urgency: "HIGHEST",
+        tat: "2 Days",
+        status: "PENDING_APPROVAL",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Open",
+        details: `Ensure direct cashback transfer architecture complies with NPCI UPI circulars and RBI nodal account disbursement regulations.`,
+        verificationRequirement: "Statutory payment compliance clearance memo.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-3`,
+        sopCode: "SOP-LEG-03",
+        title: `Direct Benefit Transfer Exemption & Mobile Identity Vetting`,
+        aspect: "legal",
+        assignee: "Prashant Mittal",
+        role: "Legal Head",
+        urgency: "HIGH",
+        tat: "1 Day",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Audit ${meta.name} mechanics against state prize scheme exemptions and consumer DPDP privacy requirements for ${meta.client}.`,
+        verificationRequirement: "State compliance legal memo signed by Legal Head.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-4`,
+        sopCode: "SOP-CMP-01",
+        title: `TRAI / Vilpower DLT SMS Header & OTP Template Whitelisting for ${meta.client}`,
+        aspect: "compliance",
+        assignee: "Khaleel Ahmed",
+        role: "Compliance SPOC",
+        urgency: "HIGHEST",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Whitelist Principal Entity ID, registered SMS Header and OTP/Cashback message templates for ${meta.name} on Vilpower & Jio DLT portals.`,
+        verificationRequirement: "DLT Portal Approval ID & Whitelisted Template Hash.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-5`,
+        sopCode: "SOP-CMP-02",
+        title: `Anti-Fraud Mobile Velocity Cap & VOIP Prefix Blacklist for ${meta.name}`,
+        aspect: "compliance",
+        assignee: "Sachin (Tech Team)",
+        role: "Security Lead",
+        urgency: "HIGH",
+        tat: "1 Day",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Enforce strict fraud caps (Max 1 claim total per mobile number, device fingerprinting, and blacklisted virtual VOIP prefix blocking) across ${meta.codeVolume}.`,
+        verificationRequirement: "Rule engine unit test log & security sign-off.",
+        mandatoryGate: false,
+      },
+      {
+        id: `task-${ts}-6`,
+        sopCode: "SOP-CMP-03",
+        title: `72-Hour Pre-Launch Live UPI Payout Staging UAT Sign-Off`,
+        aspect: "compliance",
+        assignee: "Khaleel Ahmed",
+        role: "Ops Lead",
+        urgency: "HIGHEST",
+        tat: "3 Days",
+        status: "PENDING_SIGN_OFF",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Open",
+        details: `Execute 50-number multi-device end-to-end redemption test run across Airtel, Jio, and Vi networks with live ${partnerLabel} disbursement 72h prior to Go-Live.`,
+        verificationRequirement: "Signed UAT Test Matrix with zero open P1 defects.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-7`,
+        sopCode: "SOP-ACC-01",
+        title: `100% Advance Escrow Verification of ${meta.budget} in Zoho Books`,
+        aspect: "accounting",
+        assignee: "Sneha Nair",
+        role: "Finance Lead",
+        urgency: "HIGHEST",
+        tat: "1 Day",
+        status: "COMPLETED",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Closed",
+        details: `Verify client deposit of ${meta.budget} in BigCity escrow from ${meta.client} before payout gateway float allocation. Match against Zoho Books receipt.`,
+        verificationRequirement: "Zoho Books Bank Credit Reconciliation Voucher.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-8`,
+        sopCode: "SOP-ACC-02",
+        title: `Payment Gateway (Razorpay/Cashfree) Payout Float Account Ledger`,
+        aspect: "accounting",
+        assignee: "Sneha Nair",
+        role: "Finance Lead",
+        urgency: "HIGH",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Configure automated nodal bank float account reconciliation in Zoho Books to track real-time UPI payouts and banking transaction fees.`,
+        verificationRequirement: "Zoho Books Payment Gateway Clearing Ledger entry.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-9`,
+        sopCode: "SOP-ACC-03",
+        title: `Commercial Terms & Management Fee PO Sign-Off — ${meta.client}`,
+        aspect: "accounting",
+        assignee: "Rohit Sharma",
+        role: "Admin / Commercial Head",
+        urgency: "NORMAL",
+        tat: "2 Days",
+        status: "COMPLETED",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "Closed",
+        details: `Verify BigCity management fees, GST breakdown, SMS cost per unit for ${meta.codeVolume}, and gateway commission in Zoho Books Estimate.`,
+        verificationRequirement: "Signed Client Purchase Order linked to Zoho Books Estimate.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-10`,
+        sopCode: "SOP-IMP-01",
+        title: `NPCI UPI Instant Payout Gateway API Integration (400ms SLA)`,
+        aspect: "implementation",
+        assignee: "Sachin (Tech Team)",
+        role: "Tech Lead",
+        urgency: "HIGHEST",
+        tat: "2 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Deploy direct API integration with payout gateway for instant bank account and VPA credit transfers with sub-400ms response time.`,
+        verificationRequirement: "API benchmark test pass with automated callback reconciliation.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-11`,
+        sopCode: "SOP-IMP-02",
+        title: `Deploy Responsive Mobile Cashback Claim Microsite with CDN`,
+        aspect: "implementation",
+        assignee: "Sachin (Tech Team)",
+        role: "Tech Lead",
+        urgency: "HIGH",
+        tat: "3 Days",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Deploy responsive mobile-first redemption portal with BigCity CDN, web analytics, SSL certificate, and ${meta.client} custom brand assets.`,
+        verificationRequirement: "Staging URL live with green SSL cert and load test report.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-12`,
+        sopCode: "SOP-IMP-03",
+        title: `Dual-Gateway Karix / Gupshup Failover Setup with 30s Heartbeat`,
+        aspect: "implementation",
+        assignee: "Sachin (Tech Team)",
+        role: "Tech Lead",
+        urgency: "HIGHEST",
+        tat: "1 Day",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Configure primary Karix route with automatic fallback to Gupshup if SMS latency exceeds 400ms during live marketing spikes for ${meta.name}.`,
+        verificationRequirement: "Automated gateway failover drill test pass.",
+        mandatoryGate: true,
+      },
+      {
+        id: `task-${ts}-13`,
+        sopCode: "SOP-IMP-04",
+        title: `Automated Daily 09:00 AM UPI Payout Success & Balance MIS for ${meta.client}`,
+        aspect: "implementation",
+        assignee: "Khaleel Ahmed",
+        role: "Ops Lead",
+        urgency: "NORMAL",
+        tat: "1 Day",
+        status: "IN_PROGRESS",
+        zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+        zohoCrmTaskStatus: "In Progress",
+        details: `Set up automated daily 09:00 AM executive email MIS report to ${meta.client} brand managers tracking redemptions, ${meta.budget} budget utilization, and gateway status.`,
+        verificationRequirement: "Specimen MIS template approved by CS Head.",
+        mandatoryGate: false,
+      },
+    ];
+    recommendedTAT = "10 Working Days";
+    criticalPath = [
+      `100% Advance Escrow Verification of ${meta.budget} in Zoho Books`,
+      `NPCI UPI Payout Guidelines & RBI Wallet Statutory Clearances`,
+      `TRAI / Vilpower DLT SMS Header & OTP Template Whitelisting for ${meta.client}`,
+      `72-Hour Pre-Launch Live UPI Payout Staging UAT Sign-Off`,
+    ];
+    aiAnalysis = `### ⚡ AI Cashback Architecture Assessment: **${meta.name}**\n\n**Client**: ${meta.client} · **Budget**: ${meta.budget} · **Volume**: ${meta.codeVolume} · **Disbursement**: ${partnerLabel}\n\n* **Instant Disbursement**: Sub-400ms direct VPA/bank account payout API with automated callback retry.\n* **Dual Gateway**: Karix (Primary) + Gupshup (Failover) configured with 30s heartbeat.\n* **Escrow Accounting**: 100% advance deposit (${meta.budget}) confirmed in Zoho Books escrow before payout float activation.`;
+  }
 
   const aspectSummary = {
-    legal: { total: 3, done: 0, status: "In Review" as const },
-    compliance: { total: 3, done: 0, status: "In Review" as const },
-    accounting: { total: 3, done: 2, status: "In Review" as const },
-    implementation: { total: 4, done: 0, status: "In Review" as const },
+    legal: {
+      total: tasks.filter((t) => t.aspect === "legal").length,
+      done: tasks.filter((t) => t.aspect === "legal" && t.status === "COMPLETED").length,
+      status: "In Review" as const,
+    },
+    compliance: {
+      total: tasks.filter((t) => t.aspect === "compliance").length,
+      done: tasks.filter((t) => t.aspect === "compliance" && t.status === "COMPLETED").length,
+      status: "In Review" as const,
+    },
+    accounting: {
+      total: tasks.filter((t) => t.aspect === "accounting").length,
+      done: tasks.filter((t) => t.aspect === "accounting" && t.status === "COMPLETED").length,
+      status: "In Review" as const,
+    },
+    implementation: {
+      total: tasks.filter((t) => t.aspect === "implementation").length,
+      done: tasks.filter((t) => t.aspect === "implementation" && t.status === "COMPLETED").length,
+      status: "In Review" as const,
+    },
   };
-
-  const aiAnalysis = `### 🧠 AI Campaign Architectural Assessment: **${meta.name}**\n\n**Client**: ${meta.client} · **Budget**: ${meta.budget} · **Volume**: ${meta.codeVolume} · **Reward**: ${partnerLabel}\n\n---\n\n#### 1. 🛡️ Operational & Legal Architecture\n* **Brand IP Consent**: Secured formal SOW clearance for ${partnerLabel} logo assets on ${meta.codeVolume} packs.\n* **Single-Claim Cap**: Strict velocity rule engine configured to limit 1 redemption per mobile number.\n\n#### 2. ⚡ Concurrency & High-Traffic Failover\n* **Dual Gateway**: **Karix (Primary)** + **Gupshup (Failover)** configured with 30-second automated failover to handle TV commercial spikes.\n* **72-Hour UAT**: Mandatory 50-number test matrix across Jio, Airtel, and Vi networks prior to Go-Live.\n\n#### 3. 💳 Escrow & Zoho Books Accounting\n* **Advance Payment**: 100% advance deposit (${meta.budget}) confirmed in Zoho Books escrow before voucher PO issuance.`;
 
   return {
     tasks,
     aspectSummary,
-    recommendedTAT: "12 Working Days",
-    criticalPath: [
-      `100% Advance Escrow Verification of ${meta.budget} in Zoho Books`,
-      `${partnerLabel} Written Brand IP Consent`,
-      `TRAI / DLT Header Whitelisting for ${meta.client}`,
-      `72-Hour Pre-Launch Staging UAT Sign-Off (${meta.name})`,
-    ],
+    recommendedTAT,
+    criticalPath,
     aiAnalysis,
   };
 }
@@ -520,9 +1619,9 @@ export async function generateAIAspectPlan(campaignInput: {
     "https://indigo-pelican-266513.hostingersite.com/webhook/20bf7228-5ae0-40c8-b937-00306e81cbec/chat";
 
   // Prompt engineered for Gemini to reason deeply and return JSON tasks
-  const aiPrompt = `[CAMPAIGN DECOMPOSITION & OPERATIONAL TASK MATRIX GENERATION]
+  const aiPrompt = `[CAMPAIGN OPERATIONAL TASK MATRIX GENERATION]
 Act as the BigCity Promotions Principal Campaign Architect AI.
-Decompose the promotional campaign brief into an enterprise-grade 4-aspect operational task matrix (Legal, Compliance, Accounting, Implementation).
+Decompose this specific campaign brief into a bespoke 4-aspect operational task matrix (Legal, Compliance, Accounting, Implementation).
 
 Campaign Brief:
 - Name: "${meta.name}"
@@ -534,19 +1633,22 @@ Campaign Brief:
 - Description: "${meta.brief}"
 
 Instructions:
-1. Reason about this specific brand (${meta.client}), reward mechanism (${meta.partner}), volume (${meta.codeVolume}), and budget (${meta.budget}).
-2. Generate 11 to 14 customized, actionable tasks divided into the 4 BigCity aspects:
-   - "legal": T&C drafting, ${meta.partner} written IP consent, state prize act exemption, data privacy.
-   - "compliance": TRAI / Vilpower DLT header for ${meta.client}, anti-fraud velocity capping, 72-hour staging UAT.
-   - "accounting": 100% advance escrow of ${meta.budget} in Zoho Books, commercial PO sign-off, TDS Section 194B ledger.
-   - "implementation": Cryptographic QR batch generation for ${meta.codeVolume}, AWS CDN cluster sizing, dual Karix/Gupshup gateway failover, automated 09:00 AM MIS.
-3. Assign designated BigCity SPOCs:
+1. Reason specifically about this brand (${meta.client}), reward mechanism (${meta.partner}), volume (${meta.codeVolume}), and budget (${meta.budget}).
+2. Generate 10 to 13 customized, actionable operational tasks strictly divided across the 4 BigCity aspects:
+   - "legal": Bilateral agreements, disclaimers, consumer protection, partner brand usage rights.
+   - "compliance": Operational guardrails, fraud velocity caps, cashier or merchant SOPs, pre-launch UAT sign-off.
+   - "accounting": 100% advance escrow of ${meta.budget} in Zoho Books, clearing ledgers, commercial PO sign-off.
+   - "implementation": Systems, APIs, barcodes/QR codes, portals, and daily MIS cadence.
+3. CRITICAL:
+   - Do NOT output generic boilerplate. Tailor every task to the specific reward type, distribution channel (store POS, on-pack, online wallet, dining outlet, or delivery), and industry.
+   - NEVER use the word "SOW" or "Statement of Work". Use "Master Campaign Agreement", "Commercial Scope Sign-Off", or "Brand Licensing Agreement".
+4. Assign designated BigCity SPOCs:
    - Legal: Prashant Mittal (Legal Head) or Akash Verma (Legal Counsel)
    - Compliance & Ops: Khaleel Ahmed (Compliance SPOC / Ops Lead)
    - Tech & Cloud: Sachin (Tech Team)
    - Finance: Sneha Nair (Finance Lead)
    - Commercial/Admin: Rohit Sharma (Commercial Head)
-4. Return ONLY a valid JSON object matching this schema:
+5. Return ONLY a valid JSON object matching this schema (no extra chat, no markdown fences):
 {
   "tasks": [
     {
@@ -564,7 +1666,7 @@ Instructions:
       "mandatoryGate": true
     }
   ],
-  "recommendedTAT": "12 Working Days",
+  "recommendedTAT": "10 Working Days",
   "criticalPath": ["100% Advance Escrow in Zoho Books", "72h Staging UAT", "..."],
   "aiAnalysis": "Strategic summary of campaign risks and failover architecture..."
 }`;
@@ -578,21 +1680,49 @@ Instructions:
         chatInput: aiPrompt,
         sessionId: `plan-ai-${Date.now()}`,
       }),
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(25000),
     });
 
     if (res.ok) {
-      const text = await res.text();
-      // Extract JSON from response
-      const jsonMatch = text.match(/\{[\s\S]*"tasks"[\s\S]*\}/);
+      const rawText = await res.text();
+      let assembled = "";
+      const lines = rawText.split("\n");
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const parsedLine = JSON.parse(trimmed);
+          if (parsedLine.type === "item" && parsedLine.content) {
+            assembled += parsedLine.content;
+          } else if (parsedLine.text || parsedLine.output) {
+            assembled += parsedLine.text || parsedLine.output;
+          }
+        } catch {
+          assembled += trimmed;
+        }
+      }
+      if (!assembled) assembled = rawText;
+
+      const cleaned = assembled.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
+      const jsonMatch = cleaned.match(/\{[\s\S]*"tasks"[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
         if (Array.isArray(parsed.tasks) && parsed.tasks.length >= 4) {
           const sanitizedTasks: AspectTask[] = parsed.tasks.map((t: any, i: number) => ({
             id: t.id || `task-${Date.now()}-${i + 1}`,
-            sopCode: t.sopCode || (t.aspect === "legal" ? `SOP-LEG-0${i + 1}` : t.aspect === "compliance" ? `SOP-CMP-0${i + 1}` : t.aspect === "accounting" ? `SOP-ACC-0${i + 1}` : `SOP-IMP-0${i + 1}`),
+            sopCode:
+              t.sopCode ||
+              (t.aspect === "legal"
+                ? `SOP-LEG-0${i + 1}`
+                : t.aspect === "compliance"
+                ? `SOP-CMP-0${i + 1}`
+                : t.aspect === "accounting"
+                ? `SOP-ACC-0${i + 1}`
+                : `SOP-IMP-0${i + 1}`),
             title: t.title || `Task ${i + 1}`,
-            aspect: ["legal", "compliance", "accounting", "implementation"].includes(t.aspect) ? t.aspect : "implementation",
+            aspect: ["legal", "compliance", "accounting", "implementation"].includes(t.aspect)
+              ? t.aspect
+              : "implementation",
             assignee: t.assignee || "Sachin (Tech Team)",
             role: t.role || "SPOC",
             urgency: ["HIGHEST", "HIGH", "MEDIUM", "NORMAL"].includes(t.urgency) ? t.urgency : "HIGH",
@@ -606,22 +1736,41 @@ Instructions:
           }));
 
           const aspectSummary = {
-            legal: { total: sanitizedTasks.filter((t) => t.aspect === "legal").length, done: 0, status: "In Review" as const },
-            compliance: { total: sanitizedTasks.filter((t) => t.aspect === "compliance").length, done: 0, status: "In Review" as const },
-            accounting: { total: sanitizedTasks.filter((t) => t.aspect === "accounting").length, done: 2, status: "In Review" as const },
-            implementation: { total: sanitizedTasks.filter((t) => t.aspect === "implementation").length, done: 0, status: "In Review" as const },
+            legal: {
+              total: sanitizedTasks.filter((t) => t.aspect === "legal").length,
+              done: sanitizedTasks.filter((t) => t.aspect === "legal" && t.status === "COMPLETED").length,
+              status: "In Review" as const,
+            },
+            compliance: {
+              total: sanitizedTasks.filter((t) => t.aspect === "compliance").length,
+              done: sanitizedTasks.filter((t) => t.aspect === "compliance" && t.status === "COMPLETED").length,
+              status: "In Review" as const,
+            },
+            accounting: {
+              total: sanitizedTasks.filter((t) => t.aspect === "accounting").length,
+              done: sanitizedTasks.filter((t) => t.aspect === "accounting" && t.status === "COMPLETED").length,
+              status: "In Review" as const,
+            },
+            implementation: {
+              total: sanitizedTasks.filter((t) => t.aspect === "implementation").length,
+              done: sanitizedTasks.filter((t) => t.aspect === "implementation" && t.status === "COMPLETED").length,
+              status: "In Review" as const,
+            },
           };
 
           return {
             ...meta,
             tasks: sanitizedTasks,
             aspectSummary,
-            recommendedTAT: parsed.recommendedTAT || "12 Working Days",
-            criticalPath: parsed.criticalPath || [
-              `100% Advance Escrow Verification in Zoho Books`,
-              `${meta.partner} Written Brand IP Consent`,
-              `72-Hour Pre-Launch Staging UAT Sign-Off`,
-            ],
+            recommendedTAT: parsed.recommendedTAT || "10 Working Days",
+            criticalPath:
+              parsed.criticalPath && Array.isArray(parsed.criticalPath) && parsed.criticalPath.length > 0
+                ? parsed.criticalPath
+                : [
+                    `100% Advance Escrow Verification in Zoho Books`,
+                    `${meta.partner || "Partner"} Commercial Clearances`,
+                    `72-Hour Pre-Launch Staging UAT Sign-Off`,
+                  ],
             aiAnalysis: parsed.aiAnalysis || `AI analysis generated for ${meta.name}`,
           };
         }
@@ -655,15 +1804,137 @@ export function generateAspectPlan(campaignInput: {
 }
 
 // ---------------------------------------------------------------------------
-// Zoho CRM/Books/Projects Sync Helper
+// Zoho CRM/Books/Projects Sync Helper & Books Contact Manager
 // ---------------------------------------------------------------------------
+export const KNOWN_ZOHO_BOOKS_CONTACTS: Record<string, { id: string; name: string; company: string }> = {
+  zara: { id: "4157605000000107001", name: "Zara (Inditex)", company: "Zara" },
+  zudio: { id: "4157605000000096001", name: "Zudio (Trent Ltd)", company: "Zudio" },
+  "h&m": { id: "4157605000000097001", name: "H&M (Hennes & Mauritz)", company: "H&M" },
+  hm: { id: "4157605000000097001", name: "H&M (Hennes & Mauritz)", company: "H&M" },
+  hennes: { id: "4157605000000097001", name: "H&M (Hennes & Mauritz)", company: "H&M" },
+  nestle: { id: "4157605000000047113", name: "Nestle India Limited", company: "Nestle" },
+  pepsi: { id: "4157605000000066001", name: "PepsiCo India Holdings", company: "PepsiCo" },
+  pepsico: { id: "4157605000000066001", name: "PepsiCo India Holdings", company: "PepsiCo" },
+  britannia: { id: "4157605000000067001", name: "Britannia Industries Ltd", company: "Britannia" },
+  tata: { id: "4157605000000068001", name: "Tata Consumer Products", company: "Tata Consumer Products" },
+  amul: { id: "4157605000000049063", name: "Amul India (GCMMF)", company: "Amul" },
+  coca: { id: "4157605000000047157", name: "Coca-Cola India Private Limited", company: "Coca-Cola" },
+  coke: { id: "4157605000000047157", name: "Coca-Cola India Private Limited", company: "Coca-Cola" },
+  samsung: { id: "4157605000000047135", name: "Samsung Electronics India", company: "Samsung" },
+  mondelez: { id: "4157605000000065001", name: "Mondelez India Foods Pvt Ltd", company: "Mondelez" },
+  cadbury: { id: "4157605000000065001", name: "Mondelez India Foods Pvt Ltd", company: "Mondelez" },
+  puma: { id: "4157605000000109006", name: "Puma Sports India", company: "Puma" },
+};
+
+export async function checkZohoBooksContact(client: string): Promise<{
+  exists: boolean;
+  contact?: { contactId: string; contactName: string; companyName: string };
+  suggestedName: string;
+}> {
+  const normClient = String(client || '').trim().toLowerCase();
+  for (const [key, val] of Object.entries(KNOWN_ZOHO_BOOKS_CONTACTS)) {
+    if (normClient.includes(key) || key.includes(normClient)) {
+      return {
+        exists: true,
+        contact: { contactId: val.id, contactName: val.name, companyName: val.company },
+        suggestedName: val.name,
+      };
+    }
+  }
+
+  // Live lookup via n8n webhook
+  try {
+    const N8N_ZOHO_SYNC_WEBHOOK =
+      process.env.N8N_ZOHO_SYNC_WEBHOOK ||
+      "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-task-ingest-v2";
+    const res = await fetch(N8N_ZOHO_SYNC_WEBHOOK, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "check_books_contact", client }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.exists && data.contact) {
+        KNOWN_ZOHO_BOOKS_CONTACTS[normClient] = {
+          id: data.contact.contactId,
+          name: data.contact.contactName,
+          company: data.contact.companyName,
+        };
+        return {
+          exists: true,
+          contact: data.contact,
+          suggestedName: data.contact.contactName,
+        };
+      }
+    }
+  } catch (e) {
+    console.warn("[checkZohoBooksContact] Live check failed:", e);
+  }
+
+  return {
+    exists: false,
+    suggestedName: `${client.trim()} India`,
+  };
+}
+
+export async function createZohoBooksContact(client: string, companyName?: string): Promise<{
+  success: boolean;
+  contactId?: string;
+  contactName?: string;
+  companyName?: string;
+  error?: string;
+}> {
+  const N8N_ZOHO_SYNC_WEBHOOK =
+    process.env.N8N_ZOHO_SYNC_WEBHOOK ||
+    "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-task-ingest-v2";
+
+  try {
+    const contactName = companyName ? `${client} (${companyName})` : `${client} India`;
+    const res = await fetch(N8N_ZOHO_SYNC_WEBHOOK, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "create_books_contact",
+        client,
+        contactName,
+        companyName: companyName || client,
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.contactId) {
+        const norm = client.trim().toLowerCase();
+        KNOWN_ZOHO_BOOKS_CONTACTS[norm] = {
+          id: data.contactId,
+          name: data.contactName || contactName,
+          company: data.companyName || client,
+        };
+        return {
+          success: true,
+          contactId: data.contactId,
+          contactName: data.contactName || contactName,
+          companyName: data.companyName || client,
+        };
+      }
+      return { success: false, error: data.message || "Failed to create contact in Zoho Books" };
+    }
+    return { success: false, error: `Webhook returned status ${res.status}` };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
 async function syncCampaignToZohoCRM(
   campaignId: string | null,
   campaignName: string,
   client: string,
   budget: string,
   codeVolume: string,
-  tasks: AspectTask[]
+  tasks: AspectTask[],
+  booksCustomerId?: string | null
 ): Promise<{ dealId: string | null; dealUrl: string | null; invoiceId: string | null; invoiceUrl: string | null; projectId: string | null; projectUrl: string | null; writeStatus: string }> {
   const N8N_ZOHO_SYNC_WEBHOOK =
     process.env.N8N_ZOHO_SYNC_WEBHOOK ||
@@ -692,6 +1963,7 @@ async function syncCampaignToZohoCRM(
         client,
         budget,
         codeVolume,
+        booksCustomerId: booksCustomerId || undefined,
         is_approved_by_manager: true,
         tasks,
       }),
@@ -1027,6 +2299,26 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { action } = body;
 
+    // ── Action 0A: Check Zoho Books Contact ──
+    if (action === "check_books_contact") {
+      const { client } = body;
+      if (!client) {
+        return NextResponse.json({ error: "Client is required" }, { status: 400 });
+      }
+      const check = await checkZohoBooksContact(client);
+      return NextResponse.json({ success: true, ...check });
+    }
+
+    // ── Action 0B: Create Zoho Books Contact ──
+    if (action === "create_books_contact") {
+      const { client, companyName } = body;
+      if (!client) {
+        return NextResponse.json({ error: "Client is required" }, { status: 400 });
+      }
+      const result = await createZohoBooksContact(client, companyName);
+      return NextResponse.json(result);
+    }
+
     // ── Action 1: Dynamic AI Plan Generation from Brief / Prompt ──
     if (action === "generate_plan") {
       const { campaignInput } = body;
@@ -1036,6 +2328,7 @@ export async function POST(request: NextRequest) {
 
       // Call the AI Brain decomposition engine
       const aiResult = await generateAIAspectPlan(campaignInput);
+      const booksContact = await checkZohoBooksContact(aiResult.client);
 
       return NextResponse.json({
         success: true,
@@ -1050,6 +2343,13 @@ export async function POST(request: NextRequest) {
           startDate: aiResult.startDate,
           endDate: aiResult.endDate,
           brief: aiResult.brief,
+          booksCustomerId: booksContact.contact?.contactId || undefined,
+        },
+        booksContact: {
+          exists: booksContact.exists,
+          contactId: booksContact.contact?.contactId,
+          contactName: booksContact.contact?.contactName,
+          suggestedName: booksContact.suggestedName,
         },
         plan: {
           tasks: aiResult.tasks,
@@ -1067,6 +2367,20 @@ export async function POST(request: NextRequest) {
       const now = new Date().toISOString();
       const resolvedTasks =
         tasks && tasks.length > 0 ? tasks : generateDynamicBespokePlan(campaignData).tasks;
+
+      // Resolve Zoho Books Customer ID (or auto-create if flagged)
+      let booksCustomerId = body.booksCustomerId || campaignData.booksCustomerId || null;
+      if (!booksCustomerId && campaignData.client) {
+        const contactCheck = await checkZohoBooksContact(campaignData.client);
+        if (contactCheck.exists && contactCheck.contact?.contactId) {
+          booksCustomerId = contactCheck.contact.contactId;
+        } else if (body.autoCreateBooksContact) {
+          const created = await createZohoBooksContact(campaignData.client);
+          if (created.success && created.contactId) {
+            booksCustomerId = created.contactId;
+          }
+        }
+      }
 
       // 1. Insert into Supabase first so persistent campaignId is available for Zoho webhook
       const { data: insertedRow, error: insertError } = await supabase
@@ -1117,7 +2431,8 @@ export async function POST(request: NextRequest) {
         campaignData.client,
         campaignData.budget,
         campaignData.codeVolume,
-        resolvedTasks
+        resolvedTasks,
+        booksCustomerId
       );
 
       // 3. Update the Supabase record with the returned Deal ID and mark as synced
@@ -1371,6 +2686,7 @@ export async function POST(request: NextRequest) {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
+                  action: "approve_and_sync",
                   campaignId: resolvedCampaignId,
                   campaignName: resolvedCampaignName,
                   client: resolvedClient,
@@ -1403,6 +2719,27 @@ export async function POST(request: NextRequest) {
               }
             } catch (err) {
               console.warn("[update_campaign_tasks] Zoho re-sync failed:", err);
+            }
+          } else {
+            // Already synced to Zoho — push updated tasks to Zoho Projects via n8n webhook
+            const N8N_ZOHO_SYNC_WEBHOOK =
+              process.env.N8N_ZOHO_SYNC_WEBHOOK ||
+              "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-task-ingest-v2";
+            try {
+              await fetch(N8N_ZOHO_SYNC_WEBHOOK, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  action: "update_campaign_tasks",
+                  campaignId: resolvedCampaignId,
+                  projectId: (checkRow as any)?.zoho_project_id || null,
+                  campaignName: resolvedCampaignName,
+                  tasks: tasks || [],
+                }),
+                signal: AbortSignal.timeout(10000),
+              }).catch((e) => console.warn("[update_campaign_tasks] Push to Zoho webhook warning:", e));
+            } catch (err) {
+              console.warn("[update_campaign_tasks] Post-approval task push failed:", err);
             }
           }
         } catch (err) {

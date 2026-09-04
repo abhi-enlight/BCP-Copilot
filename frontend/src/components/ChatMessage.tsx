@@ -208,7 +208,7 @@ export default function ChatMessage({ message, index }: ChatMessageProps) {
                           <div className="my-2.5 p-3 rounded-xl bg-rose-50/70 border border-rose-200/80 shadow-2xs">
                             <div className="flex items-center gap-1.5 text-rose-900 font-semibold text-[11px] mb-1 uppercase tracking-wider">
                               <ShieldWarning size={13} weight="bold" className="text-rose-600" />
-                              <span>SOW Policy Guard: Human Sign-Off Required</span>
+                              <span>Compliance & Policy Gate: Human Sign-Off Required</span>
                             </div>
                             <div className="text-[13px] text-slate-700 leading-relaxed font-normal">
                               {cleanText || children}

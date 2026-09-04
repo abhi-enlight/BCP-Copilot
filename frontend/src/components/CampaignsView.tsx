@@ -111,6 +111,13 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
   } | null>(null);
 
   const [createdCampaign, setCreatedCampaign] = useState<Campaign | null>(null);
+  const [wizardBooksContact, setWizardBooksContact] = useState<{
+    exists: boolean;
+    contactId?: string;
+    contactName?: string;
+    suggestedName?: string;
+  } | null>(null);
+  const [isRegisteringBooks, setIsRegisteringBooks] = useState(false);
   const [retryingCampaignId, setRetryingCampaignId] = useState<string | null>(null);
   const [toastNotice, setToastNotice] = useState<{
     id: string;
@@ -330,6 +337,40 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
     setFormData({ ...formData, ...preset });
   };
 
+  const handleRegisterBooksInWizard = async () => {
+    if (!formData.client) return;
+    setIsRegisteringBooks(true);
+    try {
+      const res = await fetch("/api/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create_books_contact",
+          client: formData.client,
+          companyName: wizardBooksContact?.suggestedName,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.contactId) {
+          setWizardBooksContact({
+            exists: true,
+            contactId: data.contactId,
+            contactName: data.contactName,
+          });
+          showToast(`Registered ${data.contactName || formData.client} in Zoho Books!`, "check");
+          return;
+        }
+      }
+      showToast("Could not register customer in Zoho Books", "info");
+    } catch (e) {
+      console.error("Failed to register Books contact:", e);
+      showToast("Failed to connect to Zoho Books", "info");
+    } finally {
+      setIsRegisteringBooks(false);
+    }
+  };
+
   const handleStartAIGeneration = async () => {
     if (!formData.name || !formData.client) return;
     setWizardStep("ai_generating");
@@ -354,6 +395,9 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
       setTimeout(() => {
         const plan = data.plan || generateAspectPlan(formData);
         setGeneratedPlan(plan);
+        if (data.booksContact) {
+          setWizardBooksContact(data.booksContact);
+        }
         const initialAssistantContent = data.aiAnalysis
           ? `I've analyzed **${formData.name}** and generated the 4-aspect plan:\n\n${data.aiAnalysis}\n\nYou can review all tasks on the left. Let me know if you'd like to refine any deadlines or add specific requirements.`
           : "I've drafted a 4-aspect plan based on your inputs. You can review the tasks on the left. Let me know if you need to add, remove, or modify any tasks before we approve & sync to Zoho.";
@@ -424,7 +468,7 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
         const assistantMsg: Message = {
           id: `msg-${Date.now()}-assistant`,
           role: "assistant",
-          content: `I've analyzed your instruction for **${formData.name}**. You can specify exact task modifications (e.g. _"assign all legal tasks to Akash Verma"_, _"change TAT to 1 day"_, or _"add a compliance task for TRAI DLT testing"_), or click **Modify in Copilot** for split-screen studio editing.`,
+          content: `I've analyzed your instruction for **${formData.name}**. You can specify exact task modifications (e.g. _"assign all legal tasks to Akash Verma"_, _"change TAT to 1 day"_, or _"add a compliance task for TRAI DLT testing"_), or click **Open in Copilot** for split-screen studio editing.`,
           timestamp: new Date(),
         };
         setChatMessages((prev) => [...prev, assistantMsg]);
@@ -439,7 +483,12 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
       const res = await fetch("/api/campaigns", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "approve_and_push_zoho", campaignData: formData, tasks: generatedPlan.tasks }),
+        body: JSON.stringify({
+          action: "approve_and_push_zoho",
+          campaignData: formData,
+          tasks: generatedPlan.tasks,
+          booksCustomerId: wizardBooksContact?.contactId,
+        }),
       });
       const data = await res.json();
       setTimeout(() => {
@@ -461,6 +510,7 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
     setWizardStep("input");
     setGenerationProgress(0);
     setGeneratedPlan(null);
+    setWizardBooksContact(null);
     setCreatedCampaign(null);
     setChatMessages([]);
     setFormData({
@@ -782,15 +832,7 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                       </span>
                     </div>
 
-                    {/* Progress bar — thin, clean */}
-                    <div className="w-full h-1 bg-stone-100 rounded-full overflow-hidden">
-                      <motion.div
-                        className={`h-full rounded-full ${isLive ? "bg-emerald-500" : "bg-amber-500"}`}
-                        initial={{ width: 0 }}
-                        animate={{ width: `${camp.completionRate}%` }}
-                        transition={{ duration: 0.8, delay: idx * 0.05 + 0.2, ease: [0.16, 1, 0.3, 1] }}
-                      />
-                    </div>
+
                   </div>
 
                   {/* Card Footer */}
@@ -835,7 +877,7 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                           title="Open in Copilot Studio to reassign owners and adjust tasks"
                         >
                           <Sparkle size={13} weight="fill" className="text-amber-500" />
-                          <span>Modify in Copilot</span>
+                          <span>Open in Copilot</span>
                         </button>
                       )}
 
@@ -1107,6 +1149,44 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                       </div>
                     </div>
 
+                    {/* Zoho Books Customer Pre-Flight Notice */}
+                    {wizardBooksContact && !wizardBooksContact.exists && (
+                      <div className="px-6 py-2.5 bg-amber-50 border-b border-amber-200/80 flex items-center justify-between gap-3 flex-shrink-0">
+                        <div className="flex items-center gap-2 text-xs text-amber-900">
+                          <Receipt size={16} className="text-amber-700 flex-shrink-0" />
+                          <span>
+                            Client <strong>{formData.client}</strong> is not yet registered in Zoho Books.
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleRegisterBooksInWizard}
+                          disabled={isRegisteringBooks}
+                          className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-bold shadow-2xs transition-all cursor-pointer"
+                        >
+                          {isRegisteringBooks ? (
+                            <>
+                              <CircleNotch size={13} className="animate-spin" />
+                              <span>Registering…</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sparkle size={13} weight="fill" />
+                              <span>Register in Zoho Books</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                    {wizardBooksContact && wizardBooksContact.exists && (
+                      <div className="px-6 py-2 bg-emerald-50/80 border-b border-emerald-200/60 flex items-center gap-2 text-xs text-emerald-800 flex-shrink-0">
+                        <CheckCircle size={15} weight="fill" className="text-emerald-600" />
+                        <span>
+                          Zoho Books customer verified: <strong>{wizardBooksContact.contactName || formData.client}</strong> ({wizardBooksContact.contactId})
+                        </span>
+                      </div>
+                    )}
+
                     {/* Aspect Summary Filter Badges */}
                     <div className="px-6 py-2.5 border-b border-stone-100 grid grid-cols-2 sm:grid-cols-4 gap-2 flex-shrink-0 bg-white">
                       {[
@@ -1215,9 +1295,6 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                                 </div>
 
                                 <div className="flex flex-col items-end gap-1 flex-shrink-0 text-right">
-                                  <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-stone-100 text-stone-600">
-                                    {task.urgency}
-                                  </span>
                                   <span className="text-[10.5px] text-stone-500 font-mono flex items-center gap-1">
                                     <Clock size={11} className="text-stone-400" /> {task.tat}
                                   </span>
@@ -1328,7 +1405,7 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                         title="Open interactive Copilot chat to modify tasks and adjust plan"
                       >
                         <Sparkle size={14} weight="fill" className="text-amber-400" />
-                        <span>Modify in Copilot</span>
+                        <span>Open in Copilot</span>
                       </button>
 
                       <button

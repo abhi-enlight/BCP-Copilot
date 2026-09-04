@@ -54,7 +54,7 @@ export const INTEGRATIONS_LIST: IntegrationItem[] = [
     category: "Enterprise Cloud CRM",
     status: "connected",
     metric: "Read & Write",
-    detail: "Live Read & Write • Sync Deals, Client Accounts, SOW Commercials & Post-Campaign Closeout",
+    detail: "Live Read & Write • Sync Deals, Client Accounts, Commercial Terms & Post-Campaign Closeout",
     icon: Database,
     color: "text-emerald-700",
     bg: "bg-emerald-50/80",

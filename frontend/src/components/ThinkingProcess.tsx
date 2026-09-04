@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Sparkle,
@@ -11,117 +11,248 @@ import {
   CaretDown,
   CaretUp,
   CircleNotch,
+  FolderOpen,
+  Receipt,
+  UserCheck,
 } from "@phosphor-icons/react";
 
 interface ThinkingProcessProps {
   elapsedTime?: number;
   mode?: "plan" | "chat";
-  /** Live tool-call label forwarded from n8n begin frames (e.g. "Querying Zoho CRM invoices...") */
+  /** Live tool-call label forwarded from n8n begin frames (e.g. "Querying Zoho CRM leads...") */
   toolCallLabel?: string;
+  /** Optional user prompt text to infer dynamic context */
+  userPrompt?: string;
 }
 
-const PLAN_THINKING_STEPS = [
-  {
-    id: "context",
-    title: "Querying Zoho CRM & Campaign Suite",
-    desc: "Fetching active deals, milestones, and commercial budgets",
-    icon: Database,
-    color: "text-amber-600",
-    bg: "bg-amber-50",
-    border: "border-amber-200",
-  },
-  {
-    id: "zoho_kb",
-    title: "Querying Zoho Knowledge Base & SOPs",
-    desc: "Matching 34 BigCity SOP tasks & historical OTP precedents",
-    icon: Brain,
-    color: "text-sky-600",
-    bg: "bg-sky-50",
-    border: "border-sky-200",
-  },
-  {
-    id: "guardrail",
-    title: "Evaluating SOW Policy Guardrails & SPOCs",
-    desc: "Verifying SPOC assignments (Sachin, Khaleel, Akash, Sneha)",
-    icon: ShieldCheck,
-    color: "text-emerald-600",
-    bg: "bg-emerald-50",
-    border: "border-emerald-200",
-  },
-  {
-    id: "synthesis",
-    title: "Synthesizing Strategy & Live Canvas Updates",
-    desc: "Generating structured recommendation and action plan",
-    icon: Sparkle,
-    color: "text-indigo-600",
-    bg: "bg-indigo-50",
-    border: "border-indigo-200",
-  },
-];
+interface ThinkingStep {
+  id: string;
+  title: string;
+  desc: string;
+  icon: any;
+  color: string;
+  bg: string;
+  border: string;
+}
 
-const CHAT_THINKING_STEPS = [
-  {
-    id: "context",
-    title: "Analyzing Campaign Context & Intent",
-    desc: "Parsing prompt parameters, task modifications & TAT deadlines",
-    icon: Brain,
-    color: "text-amber-600",
-    bg: "bg-amber-50",
-    border: "border-amber-200",
-  },
-  {
-    id: "zoho_kb",
-    title: "Querying Zoho Knowledge Base & SOPs",
-    desc: "Retrieving campaign precedents, legal rules & compliance policies",
-    icon: Database,
-    color: "text-sky-600",
-    bg: "bg-sky-50",
-    border: "border-sky-200",
-  },
-  {
-    id: "guardrail",
-    title: "Checking SOW Guardrails & Department SPOCs",
-    desc: "Validating ownership gates for Legal, Finance, Tech & Compliance",
-    icon: ShieldCheck,
-    color: "text-emerald-600",
-    bg: "bg-emerald-50",
-    border: "border-emerald-200",
-  },
-  {
-    id: "synthesis",
-    title: "Synthesizing AI Response & Actions",
-    desc: "Formulating verified guidance and updating milestone canvas",
-    icon: Sparkle,
-    color: "text-indigo-600",
-    bg: "bg-indigo-50",
-    border: "border-indigo-200",
-  },
-];
-
-export default function ThinkingProcess({ elapsedTime = 0, mode = "plan", toolCallLabel }: ThinkingProcessProps) {
-  const steps = mode === "plan" ? PLAN_THINKING_STEPS : CHAT_THINKING_STEPS;
-  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+export default function ThinkingProcess({
+  elapsedTime = 0,
+  mode = "chat",
+  toolCallLabel,
+  userPrompt = "",
+}: ThinkingProcessProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [seconds, setSeconds] = useState(elapsedTime);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
 
-  const activeLabel = toolCallLabel ?? null;
+  // Dynamically determine appropriate thinking steps based on query intent
+  const steps: ThinkingStep[] = useMemo(() => {
+    const prompt = (userPrompt || "").toLowerCase();
+    const tool = (toolCallLabel || "").toLowerCase();
 
-  // Auto-route step index when a specific live toolCall arrives
-  useEffect(() => {
-    if (!activeLabel) return;
-    const label = activeLabel.toLowerCase();
-    if (label.includes("crm") || label.includes("deal") || label.includes("invoice") || label.includes("account")) {
-      setCurrentStepIndex((prev) => Math.max(prev, 0));
-    } else if (label.includes("knowledge") || label.includes("sop") || label.includes("retriever") || label.includes("vector")) {
-      setCurrentStepIndex((prev) => Math.max(prev, 1));
-    } else if (label.includes("task") || label.includes("guardrail") || label.includes("policy") || label.includes("spoc")) {
-      setCurrentStepIndex((prev) => Math.max(prev, 2));
-    } else if (label.includes("synthesiz") || label.includes("generat") || label.includes("response")) {
-      setCurrentStepIndex((prev) => Math.max(prev, 3));
+    const isCountQuery =
+      prompt.includes("how many") ||
+      prompt.includes("count") ||
+      prompt.includes("number of") ||
+      prompt.includes("elements") ||
+      prompt.includes("total");
+
+    const isLeadQuery =
+      prompt.includes("lead") ||
+      prompt.includes("customer") ||
+      prompt.includes("client") ||
+      prompt.includes("contact") ||
+      prompt.includes("account") ||
+      prompt.includes("who is") ||
+      tool.includes("lead");
+
+    const isModifyQuery =
+      prompt.includes("assign") ||
+      prompt.includes("change") ||
+      prompt.includes("update") ||
+      prompt.includes("modify") ||
+      prompt.includes("reschedule") ||
+      prompt.includes("sachin");
+
+    if (isCountQuery) {
+      return [
+        {
+          id: "crm_count",
+          title: "Querying Zoho CRM Leads & Deals",
+          desc: "Fetching total active leads, customer accounts, and deals",
+          icon: Database,
+          color: "text-amber-600",
+          bg: "bg-amber-50",
+          border: "border-amber-200",
+        },
+        {
+          id: "books_count",
+          title: "Querying Zoho Books Invoices & Balances",
+          desc: "Retrieving billing records, draft invoices, and financial totals",
+          icon: Receipt,
+          color: "text-emerald-600",
+          bg: "bg-emerald-50",
+          border: "border-emerald-200",
+        },
+        {
+          id: "projects_count",
+          title: "Querying Zoho Projects Portals",
+          desc: "Inspecting active projects and task status breakdown",
+          icon: FolderOpen,
+          color: "text-sky-600",
+          bg: "bg-sky-50",
+          border: "border-sky-200",
+        },
+        {
+          id: "synthesis",
+          title: "Aggregating System Metrics",
+          desc: "Compiling real-time element summary across Zoho Suite",
+          icon: Sparkle,
+          color: "text-indigo-600",
+          bg: "bg-indigo-50",
+          border: "border-indigo-200",
+        },
+      ];
     }
-  }, [activeLabel]);
 
-  // Active duration timer
+    if (isLeadQuery) {
+      return [
+        {
+          id: "lead_search",
+          title: "Searching Zoho CRM Leads",
+          desc: "Querying verified customer records and contact history",
+          icon: UserCheck,
+          color: "text-blue-600",
+          bg: "bg-blue-50",
+          border: "border-blue-200",
+        },
+        {
+          id: "lead_verify",
+          title: "Extracting Customer Context",
+          desc: "Confirming company, industry designation, email, and phone",
+          icon: ShieldCheck,
+          color: "text-emerald-600",
+          bg: "bg-emerald-50",
+          border: "border-emerald-200",
+        },
+        {
+          id: "synthesis",
+          title: "Preparing Verified Lead Brief",
+          desc: "Formatting lead profile for campaign anchoring",
+          icon: Sparkle,
+          color: "text-indigo-600",
+          bg: "bg-indigo-50",
+          border: "border-indigo-200",
+        },
+      ];
+    }
+
+    if (isModifyQuery) {
+      return [
+        {
+          id: "parse_updates",
+          title: "Analyzing Task Reassignment & Updates",
+          desc: "Parsing assignee changes, urgency gates, and timeline adjustments",
+          icon: Brain,
+          color: "text-amber-600",
+          bg: "bg-amber-50",
+          border: "border-amber-200",
+        },
+        {
+          id: "apply_updates",
+          title: "Updating Operational Matrix",
+          desc: "Adjusting SPOC assignments and turnaround times",
+          icon: ShieldCheck,
+          color: "text-sky-600",
+          bg: "bg-sky-50",
+          border: "border-sky-200",
+        },
+        {
+          id: "synthesis",
+          title: "Confirming Campaign Changes",
+          desc: "Synchronizing updated plan for live execution",
+          icon: Sparkle,
+          color: "text-indigo-600",
+          bg: "bg-indigo-50",
+          border: "border-indigo-200",
+        },
+      ];
+    }
+
+    if (mode === "plan") {
+      return [
+        {
+          id: "lead_fetch",
+          title: "Resolving Client Lead in Zoho CRM",
+          desc: "Matching brand parameters with verified enterprise contact",
+          icon: UserCheck,
+          color: "text-amber-600",
+          bg: "bg-amber-50",
+          border: "border-amber-200",
+        },
+        {
+          id: "sops",
+          title: "Structuring 4-Aspect Operations Architecture",
+          desc: "Building Legal, Compliance, Escrow Accounting & Tech Ops tasks",
+          icon: ShieldCheck,
+          color: "text-sky-600",
+          bg: "bg-sky-50",
+          border: "border-sky-200",
+        },
+        {
+          id: "invoicing",
+          title: "Calculating Milestone Invoicing & Escrow",
+          desc: "Structuring billing breakdown and payment terms in Zoho Books",
+          icon: Receipt,
+          color: "text-emerald-600",
+          bg: "bg-emerald-50",
+          border: "border-emerald-200",
+        },
+        {
+          id: "synthesis",
+          title: "Synthesizing Interactive Campaign Canvas",
+          desc: "Rendering operational task matrix and live approval drawer",
+          icon: Sparkle,
+          color: "text-indigo-600",
+          bg: "bg-indigo-50",
+          border: "border-indigo-200",
+        },
+      ];
+    }
+
+    // Default intelligent conversational steps
+    return [
+      {
+        id: "analysis",
+        title: "Analyzing Query & Context",
+        desc: "Evaluating campaign parameters and live Zoho connections",
+        icon: Brain,
+        color: "text-amber-600",
+        bg: "bg-amber-50",
+        border: "border-amber-200",
+      },
+      {
+        id: "data_fetch",
+        title: "Querying Live Zoho Knowledge",
+        desc: "Checking verified records across CRM, Books, and SOP library",
+        icon: Database,
+        color: "text-sky-600",
+        bg: "bg-sky-50",
+        border: "border-sky-200",
+      },
+      {
+        id: "synthesis",
+        title: "Synthesizing AI Response",
+        desc: "Formulating verified guidance and actionable recommendations",
+        icon: Sparkle,
+        color: "text-indigo-600",
+        bg: "bg-indigo-50",
+        border: "border-indigo-200",
+      },
+    ];
+  }, [userPrompt, toolCallLabel, mode]);
+
+  // Live timer
   useEffect(() => {
     const timer = setInterval(() => {
       setSeconds((prev) => +(prev + 0.1).toFixed(1));
@@ -129,13 +260,25 @@ export default function ThinkingProcess({ elapsedTime = 0, mode = "plan", toolCa
     return () => clearInterval(timer);
   }, []);
 
-  // Smooth progressive step cycling: ~350ms per step
+  // Update active step dynamically when a live tool arrives or based on elapsed time
   useEffect(() => {
-    const stepInterval = setInterval(() => {
-      setCurrentStepIndex((prev) => (prev < steps.length - 1 ? prev + 1 : prev));
-    }, 350);
-    return () => clearInterval(stepInterval);
-  }, [steps.length]);
+    if (toolCallLabel) {
+      const label = toolCallLabel.toLowerCase();
+      if (label.includes("lead") || label.includes("account")) {
+        setCurrentStepIndex(0);
+      } else if (label.includes("book") || label.includes("invoice") || label.includes("deal")) {
+        setCurrentStepIndex(1 % steps.length);
+      } else if (label.includes("project") || label.includes("task") || label.includes("sop")) {
+        setCurrentStepIndex(Math.min(2, steps.length - 1));
+      } else {
+        setCurrentStepIndex(steps.length - 1);
+      }
+    } else {
+      // Natural progression based on elapsed time
+      const targetIdx = Math.min(Math.floor(seconds / 1.2), steps.length - 1);
+      setCurrentStepIndex(targetIdx);
+    }
+  }, [toolCallLabel, seconds, steps.length]);
 
   const currentStep = steps[currentStepIndex] || steps[0];
 
@@ -158,9 +301,11 @@ export default function ThinkingProcess({ elapsedTime = 0, mode = "plan", toolCa
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[13px] font-semibold tracking-tight text-slate-900">
-                {activeLabel
-                  ? activeLabel
-                  : mode === "plan" ? "Thinking & Processing Brief" : "Processing Query"}
+                {toolCallLabel
+                  ? toolCallLabel
+                  : mode === "plan"
+                  ? "Architecting Operational Campaign Matrix"
+                  : "Processing Query"}
               </span>
               <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200/80 tabular-nums font-medium">
                 {seconds.toFixed(1)}s
@@ -260,7 +405,7 @@ export default function ThinkingProcess({ elapsedTime = 0, mode = "plan", toolCa
                         )}
                       </div>
                       <p className="text-[11.5px] text-slate-500 truncate mt-0.5">
-                        {isCurrent && activeLabel ? activeLabel : step.desc}
+                        {isCurrent && toolCallLabel ? toolCallLabel : step.desc}
                       </p>
                     </div>
                   </motion.div>

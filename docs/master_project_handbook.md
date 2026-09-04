@@ -205,7 +205,7 @@ flowchart TD
 ## 7. Where Do Users Chat & Interact?
 
 ```mermaid
-flowchart LR
+flowchart 
     subgraph UserInterface["Where Users Connect"]
         U1["💻 Hosted Webchat UI\n(http://localhost:5678/workflow/...)"]
         U2["🌐 Embedded Intranet Widget\n(1-line script for BigCity Portal)"]

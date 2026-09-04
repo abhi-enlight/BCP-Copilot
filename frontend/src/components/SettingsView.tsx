@@ -158,7 +158,7 @@ export default function SettingsView() {
         {activeTab === "guardrails" && (
           <div className="p-6 rounded-2xl bg-white border border-stone-200 shadow-sm space-y-4">
             <div>
-              <h3 className="text-[13px] font-bold text-stone-900">Mandatory SOW Compliance Gates</h3>
+              <h3 className="text-[13px] font-bold text-stone-900">Mandatory Campaign Compliance Gates</h3>
               <p className="text-xs text-stone-500 mt-0.5">Guardrails preventing campaign deployment without mandatory sign-offs.</p>
             </div>
             <div className="space-y-3">
@@ -213,7 +213,7 @@ export default function SettingsView() {
             <h3 className="text-[13px] font-bold text-stone-900">Key Stakeholders & SPOCs</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[
-                { name: "Rohit Sharma", role: "Admin & Commercial Head", email: "rohit.sharma@bigcity.in", scope: "Full SOW Sign-off & System" },
+                { name: "Rohit Sharma", role: "Admin & Commercial Head", email: "rohit.sharma@bigcity.in", scope: "Commercial Sign-off & System Administration" },
                 { name: "Prashant Mittal", role: "Legal Head & Compliance SPOC", email: "prashant@bigcity.in", scope: "T&C, Partner Consents & CPA Rules" },
                 { name: "Sneha Nair", role: "Finance & Accounts Head", email: "sneha.nair@bigcity.in", scope: "Zoho Books Advance Verification & GST" },
                 { name: "Sachin", role: "Cloud & Tech Lead", email: "sachin.tech@bigcity.in", scope: "Microsite, DNS & Dual-Gateway Failover" },

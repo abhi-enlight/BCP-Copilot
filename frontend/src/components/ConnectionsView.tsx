@@ -101,7 +101,7 @@ export default function ConnectionsView() {
       authMethod: "OAuth 2.0 (ZohoCRM.modules.ALL)",
       lastPing: "Connected",
       capabilities: [
-        "Read Commercial SOW Estimates, Deal Stages & Client Briefs (Read)",
+        "Read Commercial Estimates, Deal Stages & Client Briefs (Read)",
         "Auto-create Deals & Pipeline stages on campaign brief ingestion (Write)",
         "Sync Brand SPOC contacts & account decision makers (Read & Write)",
         "Update Deal revenue and post-campaign closeout debrief notes (Write)",
