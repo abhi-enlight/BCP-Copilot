@@ -384,11 +384,16 @@ export default function CopilotView({
         if (res.ok) {
           const json = await res.json();
           if (json.found && json.campaign) {
+            const hasAllZohoProducts = Boolean(
+              json.campaign.zohoCrmDealId &&
+              json.campaign.zohoProjectId &&
+              json.campaign.zohoBooksInvoiceId
+            );
             setWorkingPlan({
               campaignData: initialPlanContext.campaignData,
               tasks: json.campaign.tasks?.length > 0 ? json.campaign.tasks : initialPlanContext.plan.tasks,
               aspectSummary: json.campaign.aspectSummary || initialPlanContext.plan.aspectSummary,
-              status: "live",
+              status: hasAllZohoProducts ? "live" : "draft",
               zohoCrmDealId: json.campaign.zohoCrmDealId,
               zohoCrmDealUrl: json.campaign.zohoCrmDealUrl,
               zohoProjectId: json.campaign.zohoProjectId,
@@ -399,8 +404,14 @@ export default function CopilotView({
               booksCustomerId: json.campaign.booksCustomerId,
               campaignId: json.campaign.id,
             });
-            showToast("Campaign already approved & synced to Zoho", "check");
-            return true;
+            checkAndPromptBooksContact(initialPlanContext.campaignData.client);
+            if (hasAllZohoProducts) {
+              showToast("Campaign already approved & synced to Zoho", "check");
+              return true;
+            } else {
+              showToast("Campaign loaded — ready to approve & sync to Zoho", "info");
+              return false;
+            }
           }
         }
       } catch (e) {
@@ -413,7 +424,7 @@ export default function CopilotView({
       setSelectedAspectFilter("all");
       setTaskSearchQuery("");
       if (!alreadyApproved) {
-        setWorkingPlan({
+        setWorkingPlan((prev) => prev || {
           campaignData: initialPlanContext.campaignData,
           tasks: initialPlanContext.plan.tasks,
           aspectSummary: initialPlanContext.plan.aspectSummary,
@@ -430,7 +441,7 @@ export default function CopilotView({
         id: `msg-${Date.now()}-assistant`,
         role: "assistant",
         content: alreadyApproved
-          ? `Campaign **${initialPlanContext.campaignData.name}** is already **Live** and synced to Zoho.\n\n**Client**: ${initialPlanContext.campaignData.client}  \n**Budget**: ${initialPlanContext.campaignData.budget}  \n**Volume**: ${initialPlanContext.campaignData.codeVolume}  \n\nYou can view it in the Campaigns dashboard or ask me any questions.`
+          ? `Campaign **${initialPlanContext.campaignData.name}** is already **Live** and synced to all Zoho products.\n\n**Client**: ${initialPlanContext.campaignData.client}  \n**Budget**: ${initialPlanContext.campaignData.budget}  \n**Volume**: ${initialPlanContext.campaignData.codeVolume}  \n\nYou can view it in the Campaigns dashboard or ask me any questions.`
           : `Draft AI Project Plan loaded for **${initialPlanContext.campaignData.name}**\n\n**Client**: ${initialPlanContext.campaignData.client}  \n**Budget**: ${initialPlanContext.campaignData.budget}  \n**Volume**: ${initialPlanContext.campaignData.codeVolume}  \n**Estimated TAT**: 12 Working Days  \n\n### 4-Aspect Breakdown (${initialPlanContext.plan.tasks.length} Total Tasks):\n\n* **Legal** (${legalCount} Tasks): Terms & conditions drafting, partner consent verification, disclaimer compliance.\n* **Compliance** (${compCount} Tasks): DLT / TRAI header whitelisting, regulatory approvals, 72h staging UAT sign-off.\n* **Accounting** (${accCount} Tasks): Advance escrow receipt verification in Zoho Books, GST mapping.\n* **Tech & Operations** (${impCount} Tasks): Cryptographic QR batch generation, CDN provisioning, gateway failover routing.\n\nWhen ready, click **Approve & Sync to Zoho** on the right or reply with **"Approve"**.`,
         timestamp: new Date(),
       };
@@ -442,6 +453,14 @@ export default function CopilotView({
       }
     });
   }, [initialPlanContext, showToast, checkAndPromptBooksContact]);
+
+  // Derived: true only when ALL 3 Zoho products (CRM Deal, Projects, Books Invoice) are synced
+  const isFullySynced = Boolean(
+    workingPlan?.status === "live" &&
+    workingPlan?.zohoCrmDealId &&
+    workingPlan?.zohoProjectId &&
+    workingPlan?.zohoBooksInvoiceId
+  );
 
   // Filtered tasks computation
   const displayedTasks = useMemo(() => {
@@ -462,7 +481,21 @@ export default function CopilotView({
 
   // Handle approve & sync campaign to Zoho CRM (Deal), Zoho Projects, Zoho Books
   const handleApprovePlanToZoho = async (overrideSkipBooksCheck = false, contactIdOverride?: string) => {
-    if (!workingPlan || workingPlan.status === "live") {
+    if (!workingPlan) {
+      setIsLoading(false);
+      setIsThinking(false);
+      setToolCallLabel(null);
+      return;
+    }
+
+    // Only abort if already live and fully synced across CRM, Projects, and Books
+    if (
+      workingPlan.status === "live" &&
+      workingPlan.zohoCrmDealId &&
+      workingPlan.zohoProjectId &&
+      workingPlan.zohoBooksInvoiceId
+    ) {
+      showToast("Campaign already fully synced to all Zoho products", "check");
       setIsLoading(false);
       setIsThinking(false);
       setToolCallLabel(null);
@@ -493,6 +526,7 @@ export default function CopilotView({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "approve_and_push_zoho",
+          campaignId: workingPlan.campaignId,
           campaignData: workingPlan.campaignData,
           tasks: workingPlan.tasks,
           booksCustomerId: targetBooksId,
@@ -818,11 +852,21 @@ export default function CopilotView({
             ((content.toLowerCase().includes("change") ||
               content.toLowerCase().includes("rename") ||
               content.toLowerCase().includes("set") ||
+              content.toLowerCase().includes("switch") ||
+              content.toLowerCase().includes("make") ||
               content.toLowerCase().includes("update")) &&
               (content.toLowerCase().includes("budget") ||
                 content.toLowerCase().includes("invoice") ||
                 content.toLowerCase().includes("amount") ||
-                content.toLowerCase().includes("name")))
+                content.toLowerCase().includes("name") ||
+                content.toLowerCase().includes("theme") ||
+                content.toLowerCase().includes("mechanic") ||
+                content.toLowerCase().includes("reward") ||
+                content.toLowerCase().includes("scratch") ||
+                content.toLowerCase().includes("cashback") ||
+                content.toLowerCase().includes("egv") ||
+                content.toLowerCase().includes("volume") ||
+                content.toLowerCase().includes("task")))
           ) {
             let targetPlan = workingPlan;
 
@@ -892,7 +936,7 @@ export default function CopilotView({
                 activePlan = updatedPlan;
                 setWorkingPlan(updatedPlan);
 
-                if (targetPlan.status === "live" || targetPlan.zohoCrmDealId) {
+                if (targetPlan.status === "live" || targetPlan.zohoCrmDealId || targetPlan.campaignId) {
                   fetch("/api/campaigns", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -905,6 +949,8 @@ export default function CopilotView({
                       newName: modResult.updatedCampaignData.name,
                       newBudget: modResult.updatedCampaignData.budget,
                       newVolume: modResult.updatedCampaignData.codeVolume,
+                      rewardType: modResult.updatedCampaignData.rewardType,
+                      tasks: modResult.updatedTasks,
                     }),
                   })
                     .then(() => {
@@ -1174,6 +1220,28 @@ export default function CopilotView({
                 if (changed) {
                   showToast(`✨ Sidebar updated with latest campaign data`, "check");
                 }
+                if (changed || modifiedIds.length > 0) {
+                  const campId = prev.campaignId;
+                  const cDealId = prev.zohoCrmDealId;
+                  if (campId || cDealId || prev.status === "live") {
+                    fetch("/api/campaigns", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        action: "update_live_campaign",
+                        campaignId: campId,
+                        dealId: cDealId,
+                        projectId: prev.zohoProjectId,
+                        invoiceId: prev.zohoBooksInvoiceId,
+                        newName: updatedCampaign.name,
+                        newBudget: updatedCampaign.budget,
+                        newVolume: updatedCampaign.codeVolume,
+                        rewardType: updatedCampaign.rewardType,
+                        tasks: updatedTasks,
+                      }),
+                    }).catch((err) => console.warn("Auto-sync from AI failed:", err));
+                  }
+                }
                 return { ...prev, tasks: updatedTasks, campaignData: updatedCampaign };
               });
             }
@@ -1253,6 +1321,28 @@ export default function CopilotView({
               );
               if (changed) {
                 showToast(`✨ Sidebar updated with latest campaign data`, "check");
+              }
+              if (changed || modifiedIds.length > 0) {
+                const campId = prev.campaignId;
+                const cDealId = prev.zohoCrmDealId;
+                if (campId || cDealId || prev.status === "live") {
+                  fetch("/api/campaigns", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      action: "update_live_campaign",
+                      campaignId: campId,
+                      dealId: cDealId,
+                      projectId: prev.zohoProjectId,
+                      invoiceId: prev.zohoBooksInvoiceId,
+                      newName: updatedCampaign.name,
+                      newBudget: updatedCampaign.budget,
+                      newVolume: updatedCampaign.codeVolume,
+                      rewardType: updatedCampaign.rewardType,
+                      tasks: updatedTasks,
+                    }),
+                  }).catch((err) => console.warn("Auto-sync from AI failed:", err));
+                }
               }
               return { ...prev, tasks: updatedTasks, campaignData: updatedCampaign };
             });
@@ -1562,13 +1652,19 @@ export default function CopilotView({
                 <div className="flex flex-wrap items-center gap-2">
                   <span
                     className={`inline-flex items-center gap-1 text-[10.5px] font-mono font-bold px-2 py-0.5 rounded-md border ${
-                      workingPlan.status === "live"
+                      isFullySynced
                         ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                        : "bg-amber-50 text-amber-900 border-amber-200"
+                        : workingPlan.zohoCrmDealId
+                          ? "bg-sky-50 text-sky-800 border-sky-200"
+                          : "bg-amber-50 text-amber-900 border-amber-200"
                     }`}
                   >
                     <Kanban size={12} weight="fill" />
-                    {workingPlan.status === "live" ? (workingPlan.zohoCrmDealId ? `LIVE · Zoho CRM · ${workingPlan.zohoCrmDealId}` : "LIVE · Zoho CRM") : "PLAN PREVIEW"}
+                    {isFullySynced
+                      ? `LIVE · ALL ZOHO SYNCED`
+                      : workingPlan.zohoCrmDealId
+                        ? `CRM DEAL · ${workingPlan.zohoCrmDealId}`
+                        : "PLAN PREVIEW"}
                   </span>
                   <span className="text-[11px] font-medium text-stone-600 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200/60">
                     {workingPlan.campaignData.client}
@@ -1615,7 +1711,7 @@ export default function CopilotView({
                   <span>Add Task</span>
                 </button>
 
-                {workingPlan.status === "live" ? (
+                {isFullySynced ? (
                   <div className="flex items-center gap-2">
                     {workingPlan.zohoCrmDealUrl && (
                       <a
@@ -1639,24 +1735,38 @@ export default function CopilotView({
                     </button>
                   </div>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => handleApprovePlanToZoho()}
-                    disabled={isPushingToZoho}
-                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold shadow-xs hover:shadow transition-all cursor-pointer active:scale-98"
-                  >
-                    {isPushingToZoho ? (
-                      <>
-                        <ArrowsClockwise size={13} className="animate-spin" />
-                        <span>Syncing to Zoho…</span>
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle size={13} weight="fill" />
-                        <span>Approve & Sync to Zoho</span>
-                      </>
+                  <div className="flex items-center gap-2">
+                    {workingPlan.zohoCrmDealUrl && (
+                      <a
+                        href={workingPlan.zohoCrmDealUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-all"
+                        title="Open in Zoho CRM"
+                      >
+                        <ArrowSquareOut size={13} weight="bold" />
+                        <span>Zoho CRM</span>
+                      </a>
                     )}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApprovePlanToZoho()}
+                      disabled={isPushingToZoho}
+                      className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold shadow-xs hover:shadow transition-all cursor-pointer active:scale-98"
+                    >
+                      {isPushingToZoho ? (
+                        <>
+                          <ArrowsClockwise size={13} className="animate-spin" />
+                          <span>Syncing to Zoho…</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle size={13} weight="fill" />
+                          <span>Approve & Sync to Zoho</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 )}
               </div>
             </div>

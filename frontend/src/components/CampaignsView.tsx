@@ -267,6 +267,8 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
           newName: editName.trim(),
           newBudget: editBudget.trim(),
           newVolume: editVolume.trim(),
+          tasks: editingCampaign.tasks,
+          rewardType: editingCampaign.rewardType,
         }),
       });
 

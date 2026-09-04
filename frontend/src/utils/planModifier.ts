@@ -196,6 +196,426 @@ export function applyPlanModifications(
   const changesSummary: string[] = [];
   let actionType: PlanModificationResult["actionType"] = "none";
 
+  // 0. THEME / MECHANIC / REWARD TYPE CHANGE INTENT: E.g., "change the theme to scratch and win", "switch to cashback", "update mechanic to EGV"
+  const isThemeChange =
+    (lower.includes("theme") ||
+      lower.includes("mechanic") ||
+      lower.includes("reward type") ||
+      lower.includes("reward mechanic") ||
+      lower.includes("switch to") ||
+      lower.includes("change to") ||
+      lower.includes("make it") ||
+      lower.includes("convert to") ||
+      lower.includes("update to")) &&
+    (/scratch|win|contest|lucky|draw|game of skill|cashback|upi|payout|egv|gift\s*card|voucher|merchandise|hamper/i.test(lower));
+
+  if (isThemeChange) {
+    let newRewardType = "Scratch & Win";
+    if (/scratch|win|contest|lucky|draw|game of skill/i.test(lower)) {
+      newRewardType = "Scratch & Win";
+    } else if (/cashback|upi|payout|cash/i.test(lower)) {
+      newRewardType = "Cashback";
+    } else if (/egv|gift\s*card|voucher|amazon|flipkart/i.test(lower)) {
+      newRewardType = "EGV";
+    } else if (/merchandise|hamper|physical|kit/i.test(lower)) {
+      newRewardType = "Merchandise";
+    }
+
+    updatedCampaign.rewardType = newRewardType;
+
+    // Update campaign name to reflect the new theme/mechanic
+    const oldName = updatedCampaign.name || "";
+    let newName = oldName;
+    const mechanicWords = ["Cashback", "Scratch & Win", "Scratch and Win", "EGV", "Gift Card", "Merchandise", "Voucher"];
+    let replaced = false;
+    for (const mw of mechanicWords) {
+      if (new RegExp(mw, "i").test(newName)) {
+        newName = newName.replace(new RegExp(mw, "gi"), newRewardType);
+        replaced = true;
+        break;
+      }
+    }
+    if (!replaced) {
+      newName = `${updatedCampaign.client || "Brand"} ${newRewardType} Campaign`;
+    }
+    updatedCampaign.name = newName;
+
+    // Generate tailored tasks for the new theme
+    const ts = Date.now();
+    let themeTasks: AspectTask[] = [];
+
+    if (newRewardType === "Scratch & Win") {
+      themeTasks = [
+        {
+          id: `task-theme-${ts}-1`,
+          sopCode: "SOP-LEG-01",
+          title: `${newName} — Master Contest Rules & Disclaimer Drafting`,
+          aspect: "legal",
+          assignee: "Prashant Mittal",
+          role: "Legal Head",
+          urgency: "HIGHEST",
+          tat: "2 Days",
+          status: "IN_PROGRESS",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "In Progress",
+          details: `Draft contest rules, eligibility restrictions, winner selection methodology, and dispute resolution guidelines for ${updatedCampaign.client || "Client"}.`,
+          verificationRequirement: "Signed Master Contest Legal Framework.",
+          mandatoryGate: true,
+        },
+        {
+          id: `task-theme-${ts}-2`,
+          sopCode: "SOP-LEG-02",
+          title: "Tamil Nadu Prize Schemes Act & State Lottery Prohibition Legal Memo",
+          aspect: "legal",
+          assignee: "Prashant Mittal",
+          role: "Legal Head",
+          urgency: "HIGHEST",
+          tat: "2 Days",
+          status: "PENDING_APPROVAL",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "Open",
+          details: "Formulate statutory compliance memo certifying campaign mechanics satisfy exemptions under Tamil Nadu Prize Schemes (Prohibition) Act and state-level game of skill/chance regulations.",
+          verificationRequirement: "State statutory compliance legal opinion signed by Legal Head.",
+          mandatoryGate: true,
+        },
+        {
+          id: `task-theme-${ts}-3`,
+          sopCode: "SOP-LEG-03",
+          title: "Independent Auditor Draw Supervision Protocol & Legal Indemnity",
+          aspect: "legal",
+          assignee: "Akash Verma",
+          role: "Legal Counsel",
+          urgency: "HIGH",
+          tat: "2 Days",
+          status: "IN_PROGRESS",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "In Progress",
+          details: "Draft formal protocol for third-party Chartered Accountant supervision during prize draws and winner verification.",
+          verificationRequirement: "Auditor agreement and supervision protocol signed.",
+          mandatoryGate: true,
+        },
+        {
+          id: `task-theme-${ts}-4`,
+          sopCode: "SOP-CMP-01",
+          title: `Tamper-Proof Scratch Foil Security & Printer Plant Audit for ${updatedCampaign.client || "Client"}`,
+          aspect: "compliance",
+          assignee: "Khaleel Ahmed",
+          role: "Compliance SPOC",
+          urgency: "HIGHEST",
+          tat: "3 Days",
+          status: "IN_PROGRESS",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "In Progress",
+          details: `Conduct on-site or certified security audit of packaging print vendor. Verify scratch-off latex opacity, infrared non-transparency, and clean room destruction of defective prints for ${updatedCampaign.codeVolume || "all codes"}.`,
+          verificationRequirement: "Printer security compliance certificate signed by packaging vendor and BigCity Ops.",
+          mandatoryGate: true,
+        },
+        {
+          id: `task-theme-${ts}-5`,
+          sopCode: "SOP-CMP-02",
+          title: "Winner KYC (PAN & Aadhaar) Authentication SLA & Anti-Fraud Gates",
+          aspect: "compliance",
+          assignee: "Sachin (Tech Team)",
+          role: "Security Lead",
+          urgency: "HIGH",
+          tat: "2 Days",
+          status: "IN_PROGRESS",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "In Progress",
+          details: "Configure automated KYC portal for high-value prize claims (>₹10,000). Integrate NSDL PAN verification and deduplication against mobile numbers.",
+          verificationRequirement: "KYC workflow unit test sign-off.",
+          mandatoryGate: true,
+        },
+        {
+          id: `task-theme-${ts}-6`,
+          sopCode: "SOP-CMP-03",
+          title: "72-Hour Pre-Launch Live Draw & Webhook Simulation UAT",
+          aspect: "compliance",
+          assignee: "Khaleel Ahmed",
+          role: "Ops Lead",
+          urgency: "HIGHEST",
+          tat: "2 Days",
+          status: "PENDING_SIGN_OFF",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "Open",
+          details: "Run end-to-end simulated scratch reveal, winning probability algorithm verification, and instant winner notification across all telecom carriers.",
+          verificationRequirement: "Signed UAT test run with algorithmic fairness audit.",
+          mandatoryGate: true,
+        },
+        {
+          id: `task-theme-${ts}-7`,
+          sopCode: "SOP-ACC-01",
+          title: "100% Advance Escrow Invoicing & Prize Pool Realization in Zoho Books",
+          aspect: "accounting",
+          assignee: "Sneha Nair",
+          role: "Finance Lead",
+          urgency: "HIGHEST",
+          tat: "1 Day",
+          status: "IN_PROGRESS",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "In Progress",
+          details: `Raise advance escrow invoice for ${updatedCampaign.budget || "₹25,00,000"} in Zoho Books. Reconcile bank wire into designated escrow sub-account before authorizing token distribution.`,
+          verificationRequirement: "Zoho Books matched payment receipt voucher attached to Deal.",
+          mandatoryGate: true,
+        },
+        {
+          id: `task-theme-${ts}-8`,
+          sopCode: "SOP-ACC-02",
+          title: "Winner TDS (Section 194B - 30%) Deduction & Government Challan Deposit",
+          aspect: "accounting",
+          assignee: "Sneha Nair",
+          role: "Finance Lead",
+          urgency: "HIGHEST",
+          tat: "2 Days",
+          status: "PENDING_APPROVAL",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "Open",
+          details: "Enforce statutory 30% TDS deduction on individual winnings exceeding ₹10,000 as per Section 194B of Income Tax Act. Automate Form 16A generation and government challan remittance.",
+          verificationRequirement: "Finance sign-off on 194B TDS compliance schedule.",
+          mandatoryGate: true,
+        },
+        {
+          id: `task-theme-${ts}-9`,
+          sopCode: "SOP-ACC-03",
+          title: "CA-Audited Prize Distribution Ledger & Statutory Escrow Reconciliation",
+          aspect: "accounting",
+          assignee: "Sneha Nair",
+          role: "Finance Lead",
+          urgency: "HIGH",
+          tat: "2 Days",
+          status: "IN_PROGRESS",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "In Progress",
+          details: "Establish daily automated escrow reconciliation ledger balancing unredeemed scratch cards against prize payouts. Secure independent CA draw audit certificate.",
+          verificationRequirement: "Chartered Accountant draw audit certificate signed and filed.",
+          mandatoryGate: true,
+        },
+        {
+          id: `task-theme-${ts}-10`,
+          sopCode: "SOP-IMP-01",
+          title: "High-Concurrency Interactive Scratch-and-Win Web Microsite Deployment",
+          aspect: "implementation",
+          assignee: "Sachin (Tech Team)",
+          role: "Tech Lead",
+          urgency: "HIGHEST",
+          tat: "3 Days",
+          status: "IN_PROGRESS",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "In Progress",
+          details: "Develop and deploy mobile-first HTML5 Canvas interactive scratch card microsite with realistic scratch foil physics, OTP verification, and SSL-encrypted claim submission.",
+          verificationRequirement: "Load test certificate demonstrating sub-500ms latency under 10,000 concurrent scratch sessions.",
+          mandatoryGate: true,
+        },
+        {
+          id: `task-theme-${ts}-11`,
+          sopCode: "SOP-IMP-02",
+          title: "Provably-Fair Cryptographic RNG & Seed Tokenization Module",
+          aspect: "implementation",
+          assignee: "Sachin (Tech Team)",
+          role: "Cloud Architect",
+          urgency: "HIGHEST",
+          tat: "2 Days",
+          status: "IN_PROGRESS",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "In Progress",
+          details: `Implement SHA-256 HMAC cryptographic pseudo-random number generator for prize allocations ensuring predetermined win distribution across ${updatedCampaign.codeVolume || "all codes"} without replay vulnerability.`,
+          verificationRequirement: "Cryptographic RNG algorithm audit sign-off.",
+          mandatoryGate: true,
+        },
+        {
+          id: `task-theme-${ts}-12`,
+          sopCode: "SOP-IMP-03",
+          title: "Instant Reward SMS Dispatch Switch & Daily Draw Telemetry Dashboard",
+          aspect: "implementation",
+          assignee: "Sachin (Tech Team)",
+          role: "Tech Lead",
+          urgency: "HIGH",
+          tat: "2 Days",
+          status: "IN_PROGRESS",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "In Progress",
+          details: "Configure dual telecom gateway (Karix/Gupshup) for sub-5 second instant winning SMS vouchers. Deploy real-time Grafana/Metabase dashboard for executive monitoring.",
+          verificationRequirement: "SMS switch 99.9% delivery SLA test run verified.",
+          mandatoryGate: false,
+        },
+      ];
+    } else if (newRewardType === "EGV") {
+      themeTasks = [
+        {
+          id: `task-theme-${ts}-1`,
+          sopCode: "SOP-LEG-01",
+          title: `${newName} — Brand Partner Bilateral Affiliate Master Agreement`,
+          aspect: "legal",
+          assignee: "Prashant Mittal",
+          role: "Legal Head",
+          urgency: "HIGHEST",
+          tat: "2 Days",
+          status: "IN_PROGRESS",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "In Progress",
+          details: `Draft and execute bilateral voucher issuance master agreement between BigCity and ${updatedCampaign.client || "Client"}.`,
+          verificationRequirement: "Signed master agreement.",
+          mandatoryGate: true,
+        },
+        {
+          id: `task-theme-${ts}-2`,
+          sopCode: "SOP-LEG-02",
+          title: "EGV Trademark Clearances & Customer Vetting Disclaimers",
+          aspect: "legal",
+          assignee: "Akash Verma",
+          role: "Legal Counsel",
+          urgency: "HIGH",
+          tat: "2 Days",
+          status: "PENDING_APPROVAL",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "Open",
+          details: "Vetting of partner brand logos, voucher validity terms, and customer dispute disclaimers.",
+          verificationRequirement: "Partner trademark clearance memo.",
+          mandatoryGate: true,
+        },
+        {
+          id: `task-theme-${ts}-3`,
+          sopCode: "SOP-CMP-01",
+          title: "Voucher Inventory Encryption & High-Entropy Code Security",
+          aspect: "compliance",
+          assignee: "Sachin (Tech Team)",
+          role: "Security Lead",
+          urgency: "HIGHEST",
+          tat: "2 Days",
+          status: "IN_PROGRESS",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "In Progress",
+          details: "Store voucher PIN codes in AES-256 encrypted database vault with audited access logs.",
+          verificationRequirement: "Security vault encryption verification report.",
+          mandatoryGate: true,
+        },
+        {
+          id: `task-theme-${ts}-4`,
+          sopCode: "SOP-ACC-01",
+          title: "100% Advance Escrow Deposit & Voucher Procurement PO",
+          aspect: "accounting",
+          assignee: "Sneha Nair",
+          role: "Finance Lead",
+          urgency: "HIGHEST",
+          tat: "1 Day",
+          status: "IN_PROGRESS",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "In Progress",
+          details: `Reconcile 100% advance deposit in Zoho Books for ${updatedCampaign.budget || "₹25,00,000"} prior to PO issuance.`,
+          verificationRequirement: "Zoho Books matched receipt voucher.",
+          mandatoryGate: true,
+        },
+        {
+          id: `task-theme-${ts}-5`,
+          sopCode: "SOP-IMP-01",
+          title: "Multi-Brand EGV Aggregator API Switch & Webhook Integration",
+          aspect: "implementation",
+          assignee: "Sachin (Tech Team)",
+          role: "Tech Lead",
+          urgency: "HIGHEST",
+          tat: "3 Days",
+          status: "IN_PROGRESS",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "In Progress",
+          details: "Integrate automated real-time voucher generation API with instant SMS delivery.",
+          verificationRequirement: "API stress test sign-off.",
+          mandatoryGate: true,
+        },
+      ];
+    } else {
+      // Default Cashback tasks
+      themeTasks = [
+        {
+          id: `task-theme-${ts}-1`,
+          sopCode: "SOP-LEG-01",
+          title: `${newName} — Master Campaign Agreement & Brand Licensing Execution`,
+          aspect: "legal",
+          assignee: "Prashant Mittal",
+          role: "Legal Head",
+          urgency: "HIGHEST",
+          tat: "2 Days",
+          status: "IN_PROGRESS",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "In Progress",
+          details: `Draft, negotiate, and execute the bilateral Master Campaign Agreement with ${updatedCampaign.client || "Client"} stakeholders.`,
+          verificationRequirement: "Signed Bilateral Master Campaign Agreement.",
+          mandatoryGate: true,
+        },
+        {
+          id: `task-theme-${ts}-2`,
+          sopCode: "SOP-LEG-02",
+          title: "UPI Incentive Disclaimers & Consumer Protection Framing",
+          aspect: "legal",
+          assignee: "Akash Verma",
+          role: "Legal Counsel",
+          urgency: "HIGH",
+          tat: "2 Days",
+          status: "PENDING_APPROVAL",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "Open",
+          details: "Structure comprehensive terms & conditions covering NPCI UPI transaction guidelines.",
+          verificationRequirement: "Signed Legal Opinion Memo on UPI Cash Incentive Framing.",
+          mandatoryGate: true,
+        },
+        {
+          id: `task-theme-${ts}-3`,
+          sopCode: "SOP-ACC-01",
+          title: `100% Advance Escrow Invoicing & ${updatedCampaign.budget || "Budget"} Fund Realization`,
+          aspect: "accounting",
+          assignee: "Sneha Nair",
+          role: "Finance Lead",
+          urgency: "HIGHEST",
+          tat: "1 Day",
+          status: "IN_PROGRESS",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "In Progress",
+          details: `Raise advance proforma invoice in Zoho Books, secure bank wire transfer from ${updatedCampaign.client || "Client"}.`,
+          verificationRequirement: "Bank wire remittance receipt voucher matched in Zoho Books.",
+          mandatoryGate: true,
+        },
+        {
+          id: `task-theme-${ts}-4`,
+          sopCode: "SOP-CMP-01",
+          title: "UPI Velocity Capping & Anti-Fraud Engine Configuration",
+          aspect: "compliance",
+          assignee: "Khaleel Ahmed",
+          role: "Compliance SPOC",
+          urgency: "HIGHEST",
+          tat: "2 Days",
+          status: "IN_PROGRESS",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "In Progress",
+          details: "Configure compliance guardrails limiting UPI claims to 1 claim per mobile number/VPA/bank account.",
+          verificationRequirement: "Rule engine staging test log sign-off.",
+          mandatoryGate: true,
+        },
+        {
+          id: `task-theme-${ts}-5`,
+          sopCode: "SOP-IMP-01",
+          title: `${updatedCampaign.client || "Brand"} Branded UPI Cashback Redemption Microsite Deployment`,
+          aspect: "implementation",
+          assignee: "Sachin (Tech Team)",
+          role: "Tech Lead",
+          urgency: "HIGHEST",
+          tat: "3 Days",
+          status: "IN_PROGRESS",
+          zohoCrmTaskId: `ZT-${Math.floor(100000 + Math.random() * 900000)}`,
+          zohoCrmTaskStatus: "In Progress",
+          details: "Build and deploy a mobile-first, SSL-encrypted claim portal aligned with brand UI guidelines.",
+          verificationRequirement: "Production URL staging sign-off.",
+          mandatoryGate: true,
+        },
+      ];
+    }
+
+    tasks = themeTasks;
+    tasks.forEach((t) => modifiedTaskIds.push(t.id));
+    changesSummary.push(`• Updated Campaign Theme & Reward Mechanic to **${newRewardType}**`);
+    changesSummary.push(`• Renamed Campaign to **"${newName}"**`);
+    changesSummary.push(`• Regenerated all operational tasks tailored for ${newRewardType} operations (${tasks.length} tasks)`);
+    actionType = "multiple";
+  }
+
   // 1. IMPROVEMENT / OPTIMIZATION INTENT: E.g., "Suggest improvements", "Optimize plan", "Add failover gates"
   const isImprovementIntent =
     lower.includes("suggest improvement") ||
@@ -717,15 +1137,20 @@ export function applyPlanModifications(
   // 7. CAMPAIGN LEVEL FIELD MODIFICATIONS: Name, Budget, Invoice Amount, Volume, Client
   const isNameChange =
     (lower.includes("rename") ||
-     lower.includes("change name") ||
-     lower.includes("change campaign name") ||
-     lower.includes("set name") ||
-     lower.includes("update name")) &&
-    (lower.includes("to") || lower.includes("as") || lower.includes("="));
+      lower.includes("change name") ||
+      lower.includes("change campaign name") ||
+      lower.includes("change the name") ||
+      lower.includes("change the campaign name") ||
+      lower.includes("set name") ||
+      lower.includes("set the name") ||
+      lower.includes("call it") ||
+      lower.includes("name it") ||
+      lower.includes("update name")) &&
+    (lower.includes("to") || lower.includes("as") || lower.includes("=") || lower.includes("is"));
 
   if (isNameChange) {
     const nameMatch =
-      input.match(/(?:rename(?:\s+campaign)?(?:\s+name)?|change(?:\s+the)?(?:\s+campaign)?\s+name|set(?:\s+the)?(?:\s+campaign)?\s+name|update(?:\s+the)?(?:\s+campaign)?\s+name)\s+(?:of\s+[\w\s\u20b9₹-]+\s+)?(?:to|as|=|is)\s+["']?([^"'\n.]+?)["']?$/i) ||
+      input.match(/(?:rename(?:\s+the)?(?:\s+campaign)?(?:\s+name)?|change(?:\s+the)?(?:\s+campaign)?\s+name|set(?:\s+the)?(?:\s+campaign)?\s+name|update(?:\s+the)?(?:\s+campaign)?\s+name|call\s+it|name\s+it)\s+(?:of\s+[\w\s\u20b9₹-]+\s+)?(?:to|as|=|is)\s+["']?([^"'\n.]+?)["']?$/i) ||
       input.match(/(?:rename|change\s+name|update\s+name)\s+(?:to|as)\s+["']?([^"'\n]+?)["']?$/i);
     if (nameMatch && nameMatch[1]) {
       const oldName = updatedCampaign.name;
@@ -841,39 +1266,124 @@ export function syncTasksFromAIResponse(
   const modifiedIds: string[] = [];
 
   const lines = responseText.split("\n");
+  let currentAspect: AspectTask["aspect"] = "legal";
+
   for (const line of lines) {
     const trimmed = line.trim();
-    if (!trimmed.startsWith("|") || trimmed.includes("---") || trimmed.toLowerCase().includes("sop code")) {
+    if (!trimmed || trimmed.includes("---") || trimmed.toLowerCase().includes("sop code")) {
       continue;
     }
 
-    const cells = trimmed
-      .split("|")
-      .map((c) => c.trim())
-      .filter((c, idx, arr) => idx > 0 && idx < arr.length - 1);
+    // Detect aspect headers in markdown: e.g. "- Legal & Licensing:", "### Compliance & Fraud Control"
+    if (/legal/i.test(trimmed) && (trimmed.endsWith(":") || trimmed.startsWith("#") || trimmed.startsWith("-") || trimmed.startsWith("*"))) {
+      currentAspect = "legal";
+      continue;
+    } else if (/compliance/i.test(trimmed) && (trimmed.endsWith(":") || trimmed.startsWith("#") || trimmed.startsWith("-") || trimmed.startsWith("*"))) {
+      currentAspect = "compliance";
+      continue;
+    } else if (/accounting|escrow|finance/i.test(trimmed) && (trimmed.endsWith(":") || trimmed.startsWith("#") || trimmed.startsWith("-") || trimmed.startsWith("*"))) {
+      currentAspect = "accounting";
+      continue;
+    } else if (/tech|implementation|ops/i.test(trimmed) && (trimmed.endsWith(":") || trimmed.startsWith("#") || trimmed.startsWith("-") || trimmed.startsWith("*"))) {
+      currentAspect = "implementation";
+      continue;
+    }
 
-    if (cells.length >= 3) {
-      const codeOrTitle = cells[0];
-      const titleOrAspect = cells[1];
-      const aspectOrAssignee = cells[2];
-      const assigneeOrTat = cells[3] || "";
-      const tatOrUrgency = cells[4] || "";
+    // Pattern 1: Table row: | SOP-LEG-01 | Title | Aspect | Assignee | TAT |
+    if (trimmed.startsWith("|")) {
+      const cells = trimmed
+        .split("|")
+        .map((c) => c.trim())
+        .filter((c, idx, arr) => idx > 0 && idx < arr.length - 1);
 
-      const sopMatch = (codeOrTitle + " " + titleOrAspect).match(/SOP-([A-Z]{3})-\d+/i);
-      const isLegal = /legal|t&c|consent/i.test(trimmed);
-      const isComp = /comp|dlt|trai|uat/i.test(trimmed);
-      const isAcc = /acc|finance|escrow|invoice/i.test(trimmed);
-      const aspect: AspectTask["aspect"] = isLegal ? "legal" : isComp ? "compliance" : isAcc ? "accounting" : "implementation";
+      if (cells.length >= 2) {
+        const codeOrTitle = cells[0];
+        const titleOrAspect = cells[1];
+        const sopMatch = (codeOrTitle + " " + titleOrAspect).match(/SOP-([A-Z]{3})-\d+/i);
+        const isLegal = /legal|t&c|consent/i.test(trimmed);
+        const isComp = /comp|dlt|trai|uat/i.test(trimmed);
+        const isAcc = /acc|finance|escrow|invoice/i.test(trimmed);
+        const aspect: AspectTask["aspect"] = isLegal ? "legal" : isComp ? "compliance" : isAcc ? "accounting" : "implementation";
 
-      const title = titleOrAspect.replace(/[*_`]/g, "").trim() || codeOrTitle.replace(/[*_`]/g, "").trim();
-      if (title.length > 5 && !title.toLowerCase().includes("task name") && !title.toLowerCase().includes("header")) {
+        const title = titleOrAspect.replace(/[*_`]/g, "").trim() || codeOrTitle.replace(/[*_`]/g, "").trim();
+        if (title.length > 5 && !title.toLowerCase().includes("task name") && !title.toLowerCase().includes("header")) {
+          const existingIdx = tasks.findIndex(
+            (t) => t.title.toLowerCase().includes(title.toLowerCase().slice(0, 15)) ||
+                   (sopMatch && t.sopCode.toLowerCase() === sopMatch[0].toLowerCase())
+          );
+
+          const member = findTeamMember(trimmed);
+          if (existingIdx >= 0) {
+            if (member && member.name !== tasks[existingIdx].assignee && trimmed.includes(member.name.split(" ")[0])) {
+              tasks[existingIdx] = {
+                ...tasks[existingIdx],
+                assignee: member.name,
+                role: member.role,
+              };
+              modifiedIds.push(tasks[existingIdx].id);
+            }
+          } else {
+            const fallbackMember = member || (
+              aspect === "legal"
+                ? BIGCITY_TEAM[0]
+                : aspect === "compliance"
+                ? BIGCITY_TEAM[4]
+                : aspect === "accounting"
+                ? BIGCITY_TEAM[6]
+                : BIGCITY_TEAM[5]
+            );
+            const sopCode = sopMatch ? sopMatch[0].toUpperCase() : `SOP-${aspect.slice(0, 3).toUpperCase()}-0${tasks.filter((t) => t.aspect === aspect).length + 1}`;
+            const newId = `task-ai-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+            const newTask: AspectTask = {
+              id: newId,
+              sopCode,
+              title: title.slice(0, 65),
+              aspect,
+              assignee: fallbackMember.name,
+              role: fallbackMember.role,
+              urgency: /highest|critical|urgent/i.test(trimmed) ? "HIGHEST" : /medium/i.test(trimmed) ? "MEDIUM" : "HIGH",
+              tat: /1\s*day|24h/i.test(trimmed) ? "1 Day" : /3\s*day/i.test(trimmed) ? "3 Days" : "2 Days",
+              status: "PENDING_APPROVAL",
+              zohoCrmTaskId: `ZP-T-${Math.floor(100000 + Math.random() * 900000)}`,
+              zohoCrmTaskStatus: "Open",
+              details: trimmed,
+              verificationRequirement: `${fallbackMember.role} sign-off required prior to Go-Live`,
+              mandatoryGate: true,
+            };
+            tasks.push(newTask);
+            modifiedIds.push(newId);
+          }
+        }
+      }
+      continue;
+    }
+
+    // Pattern 2: Bullet point under aspect: "- Finalize Game of Skill / Promotional Contest T&Cs..."
+    // Or: "1. [LEGAL] Task Title..."
+    const bulletMatch = trimmed.match(/^[-*•\d.]+\s*(?:\[(LEGAL|COMPLIANCE|ACCOUNTING|TECH|OPS)\])?\s*(.+)/i);
+    if (bulletMatch) {
+      let explicitAspect = bulletMatch[1]?.toLowerCase();
+      let rawTaskText = bulletMatch[2]?.replace(/[*_`]/g, "").trim() || "";
+
+      if (rawTaskText.length < 8 || rawTaskText.toLowerCase().startsWith("client:") || rawTaskText.toLowerCase().startsWith("budget:")) {
+        continue;
+      }
+
+      let aspect: AspectTask["aspect"] = currentAspect;
+      if (explicitAspect) {
+        aspect = explicitAspect === "legal" ? "legal" : explicitAspect === "compliance" ? "compliance" : explicitAspect === "accounting" ? "accounting" : "implementation";
+      }
+
+      const sopMatch = rawTaskText.match(/SOP-([A-Z]{3})-\d+/i);
+      const cleanTitle = rawTaskText.replace(/^SOP-[A-Z]{3}-\d+[:\-–—\s]*/i, "").split(/[.;—–]/)[0].trim();
+
+      if (cleanTitle.length >= 6) {
         const existingIdx = tasks.findIndex(
-          (t) => t.title.toLowerCase().includes(title.toLowerCase().slice(0, 15)) ||
+          (t) => t.title.toLowerCase().includes(cleanTitle.toLowerCase().slice(0, 15)) ||
                  (sopMatch && t.sopCode.toLowerCase() === sopMatch[0].toLowerCase())
         );
 
         const member = findTeamMember(trimmed);
-
         if (existingIdx >= 0) {
           if (member && member.name !== tasks[existingIdx].assignee && trimmed.includes(member.name.split(" ")[0])) {
             tasks[existingIdx] = {
@@ -898,7 +1408,7 @@ export function syncTasksFromAIResponse(
           const newTask: AspectTask = {
             id: newId,
             sopCode,
-            title: title.slice(0, 65),
+            title: cleanTitle.slice(0, 65),
             aspect,
             assignee: fallbackMember.name,
             role: fallbackMember.role,
@@ -907,7 +1417,7 @@ export function syncTasksFromAIResponse(
             status: "PENDING_APPROVAL",
             zohoCrmTaskId: `ZP-T-${Math.floor(100000 + Math.random() * 900000)}`,
             zohoCrmTaskStatus: "Open",
-            details: trimmed,
+            details: rawTaskText,
             verificationRequirement: `${fallbackMember.role} sign-off required prior to Go-Live`,
             mandatoryGate: true,
           };
@@ -922,9 +1432,8 @@ export function syncTasksFromAIResponse(
 }
 
 /**
- * Parses AI response text for campaign-level field changes (budget, name, volume)
- * and returns the updated campaign data. This catches changes that the local
- * applyPlanModifications regex missed (e.g. "change it to 20000000" without "budget" keyword).
+ * Parses AI response text for campaign-level field changes (budget, name, volume, rewardType)
+ * and returns the updated campaign data.
  */
 export function syncCampaignDataFromAIResponse(
   responseText: string,
@@ -936,11 +1445,8 @@ export function syncCampaignDataFromAIResponse(
 
   const updated = { ...currentCampaign };
   let changed = false;
-  const lower = responseText.toLowerCase();
 
-  // Extract budget from patterns like:
-  //   "Budget: ₹2,00,00,000"  "Total Budget: ₹20,00,000"  "Revised Total Budget: ₹2,00,00,000"
-  //   "Updated to ₹2,00,00,000"  "Adjusted to ₹2,00,00,000"
+  // Extract budget
   const budgetPatterns = [
     /(?:revised\s+)?(?:total\s+)?(?:campaign\s+)?budget\s*[:\-–—]?\s*(?:₹|inr|rs\.?)\s*([0-9,.]+)\s*(lakhs?|lac|cr|crore|k|m)?/i,
     /(?:updated|adjusted|changed|set|revised)\s+(?:to|at)\s+(?:₹|inr|rs\.?)\s*([0-9,.]+)\s*(lakhs?|lac|cr|crore|k|m)?/i,
@@ -960,7 +1466,6 @@ export function syncCampaignDataFromAIResponse(
         else if (unit === "m") numericVal *= 1000000;
 
         const newBudget = `₹${numericVal.toLocaleString("en-IN")}`;
-        // Only update if the parsed value differs from current (avoid no-op)
         const currentAmount = currentCampaign.amount || 0;
         if (numericVal !== currentAmount && numericVal > 0) {
           updated.budget = newBudget;
@@ -968,27 +1473,52 @@ export function syncCampaignDataFromAIResponse(
           changed = true;
         }
       }
-      break; // use first matching pattern
+      break;
     }
   }
 
-  // Extract campaign name from patterns like:
-  //   "Campaign renamed to \"New Name\""  "Renamed from X to Y"
+  // Extract campaign name (supports "Executive Summary: Jaguar Scratch & Win Campaign", "Campaign Name: ...", etc.)
   const namePatterns = [
+    /executive\s+summary\s*[:\-–—]?\s*[*_#\s]*([^\n*#]+?)(?:\s+Campaign)?(?:\n|\*|$)/i,
+    /campaign(?:\s+name)?\s*[:\-–—]\s*[*_#\s]*([^\n*#]+?)(?:\n|\*|$)/i,
     /(?:renamed|name(?:d)?|called|titled)\s+(?:to|as)\s+["'\u201c\u201d]([^"'\u201c\u201d\n.]+?)["'\u201c\u201d]/i,
     /(?:renamed|name(?:d)?)\s+from\s+.+?\s+to\s+["'\u201c\u201d]([^"'\u201c\u201d\n.]+?)["'\u201c\u201d]/i,
   ];
   for (const pattern of namePatterns) {
     const match = responseText.match(pattern);
-    if (match && match[1] && match[1].trim().length >= 3) {
-      updated.name = match[1].trim();
-      changed = true;
+    if (match && match[1] && match[1].trim().length >= 4) {
+      const parsedName = match[1].trim().replace(/^["'`]|["'`]$/g, "");
+      if (parsedName !== updated.name) {
+        updated.name = parsedName;
+        changed = true;
+        break;
+      }
+    }
+  }
+
+  // Extract Reward Type / Mechanic
+  const rewardPatterns = [
+    /(?:reward\s+(?:mechanic|type)|theme)\s*[:\-–—]\s*[*_#\s]*([^\n*#]+?)(?:\n|\*|$)/i,
+  ];
+  for (const pattern of rewardPatterns) {
+    const match = responseText.match(pattern);
+    if (match && match[1]) {
+      const rawType = match[1].trim().toLowerCase();
+      let determinedType = updated.rewardType;
+      if (/scratch|win|contest|draw/i.test(rawType)) determinedType = "Scratch & Win";
+      else if (/cashback|upi/i.test(rawType)) determinedType = "Cashback";
+      else if (/egv|gift\s*card|voucher/i.test(rawType)) determinedType = "EGV";
+      else if (/merchandise|physical/i.test(rawType)) determinedType = "Merchandise";
+
+      if (determinedType !== updated.rewardType) {
+        updated.rewardType = determinedType;
+        changed = true;
+      }
       break;
     }
   }
 
-  // Extract volume from patterns like:
-  //   "Volume: 500,000 packs"  "250000 packs"  "scaled to 500000 codes"
+  // Extract volume
   const volumePatterns = [
     /(?:volume|codes?|packs?)\s*[:\-–—]?\s*([0-9,.]+)\s*(packs?|codes?|units?|k|m)?/i,
     /(?:scaled?|set|updated|adjusted)\s+to\s+([0-9,.]+)\s*(packs?|codes?|units?|k|m)?/i,

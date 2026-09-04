@@ -2345,106 +2345,188 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // 1. Insert into Supabase first so persistent campaignId is available for Zoho webhook
-      const { data: insertedRow, error: insertError } = await supabase
-        .from("campaigns")
-        .insert({
-          name: campaignData.name,
-          client: campaignData.client,
-          category: campaignData.category || "FMCG",
-          reward_type: campaignData.rewardType || "Cashback",
-          budget: campaignData.budget || "₹25,00,000",
-          code_volume: campaignData.codeVolume || "250,000 packs",
-          start_date: campaignData.startDate || now.split("T")[0],
-          end_date: campaignData.endDate || new Date(Date.now() + 90 * 86400000).toISOString().split("T")[0],
-          brief: campaignData.brief || "AI-generated campaign plan.",
-          status: "live",
-          tasks: resolvedTasks,
-          aspect_summary: {
-            legal: { total: 3, done: 0, status: "In Review" },
-            compliance: { total: 3, done: 0, status: "In Review" },
-            accounting: { total: 3, done: 2, status: "In Review" },
-            implementation: { total: 4, done: 0, status: "In Review" },
-          },
-          zoho_crm_deal_id: null,
-          zoho_crm_deal_url: null,
-          zoho_crm_deal_stage: "Qualification",
-          zoho_project_id: null,
-          zoho_project_url: null,
-          zoho_books_invoice_id: null,
-          zoho_books_invoice_url: null,
-          books_customer_id: booksCustomerId,
-          zoho_sync_status: "pending",
-          last_zoho_sync: null,
-          approved_at: now,
-          approved_by: "Rohit Sharma (Admin)",
-        })
-        .select()
-        .single();
-
-      if (insertError) {
-        console.error("[approve_and_push_zoho] Supabase insert error:", insertError);
+      // 1. Check if an existing row exists for this campaign (or insert new)
+      let targetRow: any = null;
+      if (body.campaignId) {
+        const { data } = await supabase.from("campaigns").select("*").eq("id", body.campaignId).maybeSingle();
+        targetRow = data;
+      }
+      if (!targetRow && campaignData.name) {
+        const { data } = await supabase.from("campaigns").select("*").ilike("name", campaignData.name.trim()).maybeSingle();
+        targetRow = data;
       }
 
-      const campaignId = insertedRow?.id || null;
+      let campaignId: string;
+      if (targetRow) {
+        campaignId = targetRow.id;
+        const updateExisting: Record<string, any> = {
+          name: campaignData.name || targetRow.name,
+          client: campaignData.client || targetRow.client,
+          reward_type: campaignData.rewardType || targetRow.reward_type,
+          status: "live",
+          tasks: resolvedTasks,
+          budget: campaignData.budget || targetRow.budget,
+          code_volume: campaignData.codeVolume || targetRow.code_volume,
+          approved_at: now,
+          approved_by: "Rohit Sharma (Admin)",
+        };
+        if (booksCustomerId) updateExisting.books_customer_id = booksCustomerId;
+        await supabase.from("campaigns").update(updateExisting).eq("id", campaignId);
+      } else {
+        const { data: insertedRow, error: insertError } = await supabase
+          .from("campaigns")
+          .insert({
+            name: campaignData.name,
+            client: campaignData.client,
+            category: campaignData.category || "FMCG",
+            reward_type: campaignData.rewardType || "Cashback",
+            budget: campaignData.budget || "₹25,00,000",
+            code_volume: campaignData.codeVolume || "250,000 packs",
+            start_date: campaignData.startDate || now.split("T")[0],
+            end_date: campaignData.endDate || new Date(Date.now() + 90 * 86400000).toISOString().split("T")[0],
+            brief: campaignData.brief || "AI-generated campaign plan.",
+            status: "live",
+            tasks: resolvedTasks,
+            aspect_summary: {
+              legal: { total: 3, done: 0, status: "In Review" },
+              compliance: { total: 3, done: 0, status: "In Review" },
+              accounting: { total: 3, done: 2, status: "In Review" },
+              implementation: { total: 4, done: 0, status: "In Review" },
+            },
+            zoho_crm_deal_id: null,
+            zoho_crm_deal_url: null,
+            zoho_crm_deal_stage: "Qualification",
+            zoho_project_id: null,
+            zoho_project_url: null,
+            zoho_books_invoice_id: null,
+            zoho_books_invoice_url: null,
+            books_customer_id: booksCustomerId,
+            zoho_sync_status: "pending",
+            last_zoho_sync: null,
+            approved_at: now,
+            approved_by: "Rohit Sharma (Admin)",
+          })
+          .select()
+          .single();
 
-      // 2. Call Zoho CRM sync with the real campaignId on the first attempt
-      const { dealId, dealUrl, invoiceId, invoiceUrl, projectId, projectUrl, writeStatus } = await syncCampaignToZohoCRM(
-        campaignId,
-        campaignData.name,
-        campaignData.client,
-        campaignData.budget,
-        campaignData.codeVolume,
-        resolvedTasks,
-        booksCustomerId
-      );
+        if (insertError) {
+          console.error("[approve_and_push_zoho] Supabase insert error:", insertError);
+        }
+        targetRow = insertedRow;
+        campaignId = insertedRow?.id;
+      }
 
-      // 3. Update the Supabase record with the returned Deal ID and mark as synced
-      if (dealId && insertedRow?.id) {
-        const updatePayload: Record<string, any> = {
+      // 2. Call Zoho CRM sync or update
+      let dealId = targetRow?.zoho_crm_deal_id || null;
+      let dealUrl = targetRow?.zoho_crm_deal_url || null;
+      let invoiceId = targetRow?.zoho_books_invoice_id || null;
+      let invoiceUrl = targetRow?.zoho_books_invoice_url || null;
+      let projectId = targetRow?.zoho_project_id || null;
+      let projectUrl = targetRow?.zoho_project_url || null;
+      let writeStatus = dealId ? "SYNCED" : "PENDING";
+
+      if (dealId) {
+        // Record already exists in Zoho CRM: Update existing resources across CRM, Projects, and Books
+        const N8N_ZOHO_UPDATE_WEBHOOK =
+          process.env.N8N_ZOHO_UPDATE_WEBHOOK ||
+          "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-update-resources";
+
+        const numericAmount = parseFloat(String(campaignData.budget || targetRow.budget || "0").replace(/[^0-9.]/g, "")) || 0;
+        const taskSummary = resolvedTasks
+          .map((t: any, i: number) => `${i + 1}. [${(t.aspect || "").toUpperCase()}] ${t.title || t.name} — Owner: ${t.assignee || "TBD"}, TAT: ${t.tat || "2 Days"}, Urgency: ${t.urgency || "HIGH"}`)
+          .join("\n");
+
+        await fetch(N8N_ZOHO_UPDATE_WEBHOOK, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            dealId,
+            projectId,
+            invoiceId,
+            customerId: booksCustomerId || targetRow.books_customer_id,
+            client: campaignData.client || targetRow.client,
+            campaignName: campaignData.name || targetRow.name,
+            amount: numericAmount,
+            budget: campaignData.budget || targetRow.budget,
+            rewardType: campaignData.rewardType || targetRow.reward_type,
+            tasks: resolvedTasks,
+            taskSummary,
+          }),
+          signal: AbortSignal.timeout(12000),
+        }).catch((err) => console.warn("[approve_and_push_zoho] Update webhook failed:", err));
+
+        await supabase
+          .from("campaigns")
+          .update({
+            last_zoho_sync: now,
+            zoho_sync_status: "synced",
+          })
+          .eq("id", campaignId);
+      } else {
+        const syncRes = await syncCampaignToZohoCRM(
+          campaignId,
+          campaignData.name,
+          campaignData.client,
+          campaignData.budget,
+          campaignData.codeVolume,
+          resolvedTasks,
+          booksCustomerId
+        );
+        dealId = syncRes.dealId;
+        dealUrl = syncRes.dealUrl;
+        invoiceId = syncRes.invoiceId;
+        invoiceUrl = syncRes.invoiceUrl;
+        projectId = syncRes.projectId;
+        projectUrl = syncRes.projectUrl;
+        writeStatus = syncRes.writeStatus;
+
+        // 3. Update the Supabase record with the returned Deal ID and mark as synced
+        if (dealId && targetRow?.id) {
+          const updatePayload: Record<string, any> = {
             zoho_crm_deal_id: dealId,
             zoho_crm_deal_url: dealUrl,
             zoho_crm_deal_stage: "Qualification",
             zoho_sync_status: "synced",
             last_zoho_sync: now,
-        };
-        if (invoiceId) {
-          updatePayload.zoho_books_invoice_id = invoiceId;
-          updatePayload.zoho_books_invoice_url = invoiceUrl;
-        }
-        if (projectId) {
-          updatePayload.zoho_project_id = projectId;
-          updatePayload.zoho_project_url = projectUrl;
-        }
-        if (booksCustomerId) {
-          updatePayload.books_customer_id = booksCustomerId;
-        }
+          };
+          if (invoiceId) {
+            updatePayload.zoho_books_invoice_id = invoiceId;
+            updatePayload.zoho_books_invoice_url = invoiceUrl;
+          }
+          if (projectId) {
+            updatePayload.zoho_project_id = projectId;
+            updatePayload.zoho_project_url = projectUrl;
+          }
+          if (booksCustomerId) {
+            updatePayload.books_customer_id = booksCustomerId;
+          }
 
-        await supabase
-          .from("campaigns")
-          .update(updatePayload)
-          .eq("id", insertedRow.id);
+          await supabase
+            .from("campaigns")
+            .update(updatePayload)
+            .eq("id", targetRow.id);
 
-        insertedRow.zoho_crm_deal_id = dealId;
-        insertedRow.zoho_crm_deal_url = dealUrl;
-        insertedRow.zoho_crm_deal_stage = "Qualification";
-        insertedRow.zoho_sync_status = "synced";
-        insertedRow.last_zoho_sync = now;
-        if (booksCustomerId) {
-          insertedRow.books_customer_id = booksCustomerId;
-        }
-        if (invoiceId) {
-          insertedRow.zoho_books_invoice_id = invoiceId;
-          insertedRow.zoho_books_invoice_url = invoiceUrl;
-        }
-        if (projectId) {
-          insertedRow.zoho_project_id = projectId;
-          insertedRow.zoho_project_url = projectUrl;
+          targetRow.zoho_crm_deal_id = dealId;
+          targetRow.zoho_crm_deal_url = dealUrl;
+          targetRow.zoho_crm_deal_stage = "Qualification";
+          targetRow.zoho_sync_status = "synced";
+          targetRow.last_zoho_sync = now;
+          if (booksCustomerId) {
+            targetRow.books_customer_id = booksCustomerId;
+          }
+          if (invoiceId) {
+            targetRow.zoho_books_invoice_id = invoiceId;
+            targetRow.zoho_books_invoice_url = invoiceUrl;
+          }
+          if (projectId) {
+            targetRow.zoho_project_id = projectId;
+            targetRow.zoho_project_url = projectUrl;
+          }
         }
       }
 
       // 4. Fallback: if initial webhook didn't return dealId, fire background re-sync with campaignId
-      if (!dealId && insertedRow?.id) {
+      if (!dealId && targetRow?.id) {
         const N8N_ZOHO_SYNC_WEBHOOK =
           process.env.N8N_ZOHO_SYNC_WEBHOOK ||
           "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-task-ingest-v2";
@@ -2452,7 +2534,7 @@ export async function POST(request: NextRequest) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            campaignId: insertedRow.id,
+            campaignId: targetRow.id,
             campaignName: campaignData.name,
             client: campaignData.client,
             budget: campaignData.budget,
@@ -2463,8 +2545,8 @@ export async function POST(request: NextRequest) {
         }).catch((err) => console.warn("[approve_and_push_zoho] Re-fire webhook failed:", err));
       }
 
-      const savedCampaign: Campaign = insertedRow
-        ? rowToCampaign(insertedRow)
+      const savedCampaign: Campaign = targetRow
+        ? rowToCampaign(targetRow)
         : {
             id: `camp-${Date.now()}`,
             name: campaignData.name,
@@ -2760,7 +2842,7 @@ export async function POST(request: NextRequest) {
 
     // ── Action 5: Update Live Campaign across Zoho CRM, Books, Projects & Supabase ──
     if (action === "update_live_campaign") {
-      const { campaignId, dealId, projectId, invoiceId, newName, newBudget, newVolume } = body;
+      const { campaignId, dealId, projectId, invoiceId, newName, newBudget, newVolume, tasks, rewardType } = body;
 
       let campRow: any = null;
       if (campaignId) {
@@ -2782,6 +2864,12 @@ export async function POST(request: NextRequest) {
       const resolvedName = newName || campRow?.name;
       const resolvedBudget = newBudget || campRow?.budget;
       const numericAmount = parseFloat(String(resolvedBudget || "0").replace(/[^0-9.]/g, "")) || 0;
+      const resolvedTasks = Array.isArray(tasks) && tasks.length > 0 ? tasks : (campRow?.tasks || []);
+      const resolvedRewardType = rewardType || campRow?.reward_type || "Cashback";
+
+      const taskSummary = resolvedTasks
+        .map((t: any, i: number) => `${i + 1}. [${(t.aspect || "").toUpperCase()}] ${t.title || t.name} — Owner: ${t.assignee || "TBD"}, TAT: ${t.tat || "2 Days"}, Urgency: ${t.urgency || "HIGH"}`)
+        .join("\n");
 
       const N8N_ZOHO_UPDATE_WEBHOOK =
         process.env.N8N_ZOHO_UPDATE_WEBHOOK ||
@@ -2799,8 +2887,11 @@ export async function POST(request: NextRequest) {
           campaignName: resolvedName,
           amount: numericAmount,
           budget: resolvedBudget,
+          rewardType: resolvedRewardType,
+          tasks: resolvedTasks,
+          taskSummary,
         }),
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(12000),
       }).catch((err) => {
         console.warn("[update_live_campaign] Webhook call failed:", err);
         return null;
@@ -2808,15 +2899,30 @@ export async function POST(request: NextRequest) {
 
       const updateData = updateRes && updateRes.ok ? await updateRes.json().catch(() => ({})) : null;
 
-      if (campRow?.id) {
+      const targetCampaignId = campRow?.id || campaignId;
+      if (targetCampaignId) {
         const updates: Record<string, any> = {
           last_zoho_sync: new Date().toISOString(),
         };
         if (resolvedName) updates.name = resolvedName;
         if (resolvedBudget) updates.budget = resolvedBudget;
         if (newVolume) updates.code_volume = newVolume;
+        if (resolvedRewardType) updates.reward_type = resolvedRewardType;
+        if (resolvedTasks && resolvedTasks.length > 0) {
+          updates.tasks = resolvedTasks;
+          const legal = resolvedTasks.filter((t: any) => (t.aspect || "").toLowerCase() === "legal");
+          const compliance = resolvedTasks.filter((t: any) => (t.aspect || "").toLowerCase() === "compliance");
+          const accounting = resolvedTasks.filter((t: any) => (t.aspect || "").toLowerCase() === "accounting");
+          const implementation = resolvedTasks.filter((t: any) => (t.aspect || "").toLowerCase() === "implementation");
+          updates.aspect_summary = {
+            legal: { total: legal.length, done: legal.filter((t: any) => t.status === "COMPLETED").length, status: legal.some((t: any) => t.status !== "COMPLETED") ? "In Review" : "Approved" },
+            compliance: { total: compliance.length, done: compliance.filter((t: any) => t.status === "COMPLETED").length, status: compliance.some((t: any) => t.status !== "COMPLETED") ? "In Review" : "Approved" },
+            accounting: { total: accounting.length, done: accounting.filter((t: any) => t.status === "COMPLETED").length, status: accounting.some((t: any) => t.status !== "COMPLETED") ? "In Review" : "Approved" },
+            implementation: { total: implementation.length, done: implementation.filter((t: any) => t.status === "COMPLETED").length, status: implementation.some((t: any) => t.status !== "COMPLETED") ? "In Review" : "Approved" },
+          };
+        }
 
-        await supabase.from("campaigns").update(updates).eq("id", campRow.id);
+        await supabase.from("campaigns").update(updates).eq("id", targetCampaignId);
       }
 
       return NextResponse.json({
@@ -2824,6 +2930,8 @@ export async function POST(request: NextRequest) {
         campaignName: resolvedName,
         budget: resolvedBudget,
         amount: numericAmount,
+        rewardType: resolvedRewardType,
+        tasksCount: resolvedTasks.length,
         dealId: resolvedDealId,
         projectId: resolvedProjectId,
         invoiceId: resolvedInvoiceId,
