@@ -481,7 +481,52 @@ export default function CopilotView({
 
   // Handle approve & sync campaign to Zoho CRM (Deal), Zoho Projects, Zoho Books
   const handleApprovePlanToZoho = async (overrideSkipBooksCheck = false, contactIdOverride?: string) => {
-    if (!workingPlan) {
+    let targetPlanState = workingPlan;
+
+    // Fallback: If no working plan is active in state, fetch the latest campaign from Supabase API
+    if (!targetPlanState) {
+      try {
+        const campRes = await fetch("/api/campaigns");
+        if (campRes.ok) {
+          const campData = await campRes.json();
+          const campaigns: Campaign[] = campData.campaigns || [];
+          if (campaigns.length > 0) {
+            const latest = campaigns[0];
+            targetPlanState = {
+              campaignId: latest.id,
+              campaignData: {
+                name: latest.name,
+                client: latest.client,
+                rewardType: latest.rewardType,
+                budget: latest.budget,
+                codeVolume: latest.codeVolume,
+                startDate: latest.startDate,
+                endDate: latest.endDate,
+                brief: latest.brief,
+              },
+              tasks: latest.tasks || [],
+              aspectSummary: latest.aspectSummary,
+              status: (latest.status?.toLowerCase() === "live" ? "live" : "draft") as "draft" | "syncing" | "live",
+              zohoCrmDealId: latest.zohoCrmDealId,
+              zohoCrmDealUrl: latest.zohoCrmDealUrl,
+              zohoProjectId: latest.zohoProjectId,
+              zohoProjectUrl: latest.zohoProjectUrl,
+              zohoBooksInvoiceId: latest.zohoBooksInvoiceId,
+              zohoBooksInvoiceUrl: latest.zohoBooksInvoiceUrl,
+              zohoSyncStatus: latest.zohoSyncStatus,
+              booksCustomerId: latest.booksCustomerId,
+            };
+            setWorkingPlan(targetPlanState);
+            setIsPlanPanelOpen(true);
+          }
+        }
+      } catch (e) {
+        console.warn("Fallback campaign fetch for approval failed:", e);
+      }
+    }
+
+    if (!targetPlanState) {
+      showToast("No active campaign plan to approve", "info");
       setIsLoading(false);
       setIsThinking(false);
       setToolCallLabel(null);
@@ -490,10 +535,10 @@ export default function CopilotView({
 
     // Only abort if already live and fully synced across CRM, Projects, and Books
     if (
-      workingPlan.status === "live" &&
-      workingPlan.zohoCrmDealId &&
-      workingPlan.zohoProjectId &&
-      workingPlan.zohoBooksInvoiceId
+      targetPlanState.status === "live" &&
+      targetPlanState.zohoCrmDealId &&
+      targetPlanState.zohoProjectId &&
+      targetPlanState.zohoBooksInvoiceId
     ) {
       showToast("Campaign already fully synced to all Zoho products", "check");
       setIsLoading(false);
@@ -502,12 +547,12 @@ export default function CopilotView({
       return;
     }
 
-    const targetBooksId = contactIdOverride || workingPlan.booksCustomerId;
+    const targetBooksId = contactIdOverride || targetPlanState.booksCustomerId;
 
     if (
       !overrideSkipBooksCheck &&
-      workingPlan.booksContact &&
-      !workingPlan.booksContact.exists &&
+      targetPlanState.booksContact &&
+      !targetPlanState.booksContact.exists &&
       !targetBooksId
     ) {
       setIsLoading(false);
@@ -518,7 +563,7 @@ export default function CopilotView({
     }
 
     setIsPushingToZoho(true);
-    setWorkingPlan((prev) => (prev ? { ...prev, status: "syncing" } : null));
+    setWorkingPlan((prev) => (prev ? { ...prev, status: "syncing" } : { ...targetPlanState!, status: "syncing" }));
 
     try {
       const res = await fetch("/api/campaigns", {
@@ -526,9 +571,9 @@ export default function CopilotView({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "approve_and_push_zoho",
-          campaignId: workingPlan.campaignId,
-          campaignData: workingPlan.campaignData,
-          tasks: workingPlan.tasks,
+          campaignId: targetPlanState.campaignId,
+          campaignData: targetPlanState.campaignData,
+          tasks: targetPlanState.tasks,
           booksCustomerId: targetBooksId,
         }),
       });
@@ -537,7 +582,7 @@ export default function CopilotView({
         const data = await res.json();
         const created = data.campaign as Campaign;
         const zohoSync = data.zohoSync;
-        const assignedNames = Array.from(new Set(workingPlan.tasks.map((t) => t.assignee))).join(", ");
+        const assignedNames = Array.from(new Set((targetPlanState.tasks || []).map((t) => t.assignee))).join(", ");
 
         // Restore all Zoho product IDs into working plan state
         setWorkingPlan((prev) =>
@@ -555,6 +600,7 @@ export default function CopilotView({
               }
             : null
         );
+        setIsPlanPanelOpen(true);
 
         const crmDealId = zohoSync?.crmDeal?.dealId;
         const invoiceId = created.zohoBooksInvoiceId || zohoSync?.booksInvoice?.invoiceId;
@@ -571,7 +617,7 @@ export default function CopilotView({
           content:
             `**Campaign Approved & Synced: ${created.name}**\n\n` +
             `* **Client**: ${created.client}\n` +
-            `* **Tasks Saved**: ${workingPlan.tasks.length} tasks across 4 milestone aspects\n\n` +
+            `* **Tasks Saved**: ${(targetPlanState.tasks || []).length} tasks across 4 milestone aspects\n\n` +
             `### Zoho Product Sync Status\n\n` +
             `| Product | Purpose | Status | ID |\n` +
             `|---------|---------|--------|----|\n` +
@@ -917,6 +963,27 @@ export default function CopilotView({
               }
             }
 
+            // Fallback: If still no targetPlan, create dynamic draft plan from user prompt
+            if (!targetPlan) {
+              const nameMatch = content.match(/(?:update|change|modify|set|rename|switch|for)\s+(?:the\s+)?([A-Za-z0-9\s]+?)\s+(?:project|campaign|deal|to|budget|amount|name|theme|mechanic)/i);
+              const clientName = nameMatch ? nameMatch[1].trim() : "Campaign";
+              targetPlan = {
+                campaignData: {
+                  name: `${clientName} Campaign`,
+                  client: clientName,
+                  rewardType: "Cashback",
+                  budget: "₹1,00,00,000",
+                  codeVolume: "1,00,000",
+                  startDate: new Date().toISOString().split("T")[0],
+                  endDate: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().split("T")[0],
+                  brief: content,
+                },
+                tasks: [],
+                aspectSummary: { legal: 0, compliance: 0, accounting: 0, implementation: 0 },
+                status: "draft",
+              };
+            }
+
             if (targetPlan) {
               const modResult = applyPlanModifications(
                 targetPlan.tasks,
@@ -1202,24 +1269,50 @@ export default function CopilotView({
             // Dynamically sync tasks AND campaign data from AI response into right canvas
             if (accumulatedContent) {
               setWorkingPlan((prev) => {
-                if (!prev) return null;
+                const baseTasks = prev?.tasks || [];
+                const baseCampaign = prev?.campaignData || {
+                  name: "New Campaign Plan",
+                  client: "Client",
+                  rewardType: "Cashback",
+                  budget: "₹1,00,00,000",
+                  codeVolume: "1,00,000",
+                  startDate: new Date().toISOString().split("T")[0],
+                  endDate: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().split("T")[0],
+                  brief: "AI Generated Campaign",
+                };
+
                 const { updatedTasks, modifiedIds } = syncTasksFromAIResponse(
                   accumulatedContent,
-                  prev.tasks
+                  baseTasks
                 );
+                const { updatedCampaign, changed } = syncCampaignDataFromAIResponse(
+                  accumulatedContent,
+                  baseCampaign
+                );
+
                 if (modifiedIds.length > 0) {
                   setHighlightedTaskIds(modifiedIds);
                   setTimeout(() => setHighlightedTaskIds([]), 5000);
                   showToast(`✨ Synced ${modifiedIds.length} tasks from AI`, "sparkle");
                 }
-                // Sync campaign-level fields (budget, name, volume) from AI response
-                const { updatedCampaign, changed } = syncCampaignDataFromAIResponse(
-                  accumulatedContent,
-                  prev.campaignData
-                );
                 if (changed) {
                   showToast(`✨ Sidebar updated with latest campaign data`, "check");
                 }
+
+                if (!prev) {
+                  const hasPlanKeywords = /campaign|budget|task|project|invoice|escrow|reward/i.test(accumulatedContent);
+                  if (changed || modifiedIds.length > 0 || hasPlanKeywords) {
+                    setIsPlanPanelOpen(true);
+                    return {
+                      campaignData: updatedCampaign,
+                      tasks: updatedTasks,
+                      aspectSummary: { legal: 0, compliance: 0, accounting: 0, implementation: 0 },
+                      status: "draft",
+                    };
+                  }
+                  return null;
+                }
+
                 if (changed || modifiedIds.length > 0) {
                   const campId = prev.campaignId;
                   const cDealId = prev.zohoCrmDealId;
