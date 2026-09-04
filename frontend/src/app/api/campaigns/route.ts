@@ -1806,25 +1806,6 @@ export function generateAspectPlan(campaignInput: {
 // ---------------------------------------------------------------------------
 // Zoho CRM/Books/Projects Sync Helper & Books Contact Manager
 // ---------------------------------------------------------------------------
-export const KNOWN_ZOHO_BOOKS_CONTACTS: Record<string, { id: string; name: string; company: string }> = {
-  zara: { id: "4157605000000107001", name: "Zara (Inditex)", company: "Zara" },
-  zudio: { id: "4157605000000096001", name: "Zudio (Trent Ltd)", company: "Zudio" },
-  "h&m": { id: "4157605000000097001", name: "H&M (Hennes & Mauritz)", company: "H&M" },
-  hm: { id: "4157605000000097001", name: "H&M (Hennes & Mauritz)", company: "H&M" },
-  hennes: { id: "4157605000000097001", name: "H&M (Hennes & Mauritz)", company: "H&M" },
-  nestle: { id: "4157605000000047113", name: "Nestle India Limited", company: "Nestle" },
-  pepsi: { id: "4157605000000066001", name: "PepsiCo India Holdings", company: "PepsiCo" },
-  pepsico: { id: "4157605000000066001", name: "PepsiCo India Holdings", company: "PepsiCo" },
-  britannia: { id: "4157605000000067001", name: "Britannia Industries Ltd", company: "Britannia" },
-  tata: { id: "4157605000000068001", name: "Tata Consumer Products", company: "Tata Consumer Products" },
-  amul: { id: "4157605000000049063", name: "Amul India (GCMMF)", company: "Amul" },
-  coca: { id: "4157605000000047157", name: "Coca-Cola India Private Limited", company: "Coca-Cola" },
-  coke: { id: "4157605000000047157", name: "Coca-Cola India Private Limited", company: "Coca-Cola" },
-  samsung: { id: "4157605000000047135", name: "Samsung Electronics India", company: "Samsung" },
-  mondelez: { id: "4157605000000065001", name: "Mondelez India Foods Pvt Ltd", company: "Mondelez" },
-  cadbury: { id: "4157605000000065001", name: "Mondelez India Foods Pvt Ltd", company: "Mondelez" },
-  puma: { id: "4157605000000109006", name: "Puma Sports India", company: "Puma" },
-};
 
 export async function checkZohoBooksContact(client: string): Promise<{
   exists: boolean;
@@ -1832,15 +1813,6 @@ export async function checkZohoBooksContact(client: string): Promise<{
   suggestedName: string;
 }> {
   const normClient = String(client || '').trim().toLowerCase();
-  for (const [key, val] of Object.entries(KNOWN_ZOHO_BOOKS_CONTACTS)) {
-    if (normClient.includes(key) || key.includes(normClient)) {
-      return {
-        exists: true,
-        contact: { contactId: val.id, contactName: val.name, companyName: val.company },
-        suggestedName: val.name,
-      };
-    }
-  }
 
   // Live lookup via n8n webhook
   try {
@@ -1856,11 +1828,6 @@ export async function checkZohoBooksContact(client: string): Promise<{
     if (res.ok) {
       const data = await res.json();
       if (data.exists && data.contact) {
-        KNOWN_ZOHO_BOOKS_CONTACTS[normClient] = {
-          id: data.contact.contactId,
-          name: data.contact.contactName,
-          company: data.contact.companyName,
-        };
         return {
           exists: true,
           contact: data.contact,
