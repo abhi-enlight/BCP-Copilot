@@ -135,8 +135,8 @@ export default function ConnectionsView() {
       ],
     },
     {
-      id: "zoho-knowledge",
-      name: "Zoho Knowledge Base",
+      id: "Vector Database",
+      name: "Vector Database",
       category: "Campaign SOPs & Precedents",
       status: "synced",
       statusLabel: "34 SOPs",
