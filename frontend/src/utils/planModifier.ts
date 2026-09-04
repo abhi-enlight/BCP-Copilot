@@ -1266,7 +1266,8 @@ export function syncTasksFromAIResponse(
   const modifiedIds: string[] = [];
 
   const lines = responseText.split("\n");
-  let currentAspect: AspectTask["aspect"] = "legal";
+  let currentAspect: AspectTask["aspect"] | null = null;
+  let inPillarsSection = false;
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -1274,18 +1275,27 @@ export function syncTasksFromAIResponse(
       continue;
     }
 
-    // Detect aspect headers in markdown: e.g. "- Legal & Licensing:", "### Compliance & Fraud Control"
-    if (/legal/i.test(trimmed) && (trimmed.endsWith(":") || trimmed.startsWith("#") || trimmed.startsWith("-") || trimmed.startsWith("*"))) {
+    if (/operational\s*pillars|4-aspect|milestones?\s*&\s*tasks|task\s*matrix/i.test(trimmed)) {
+      inPillarsSection = true;
+      continue;
+    }
+
+    // Detect aspect headers in markdown: e.g. "1. Legal & Contracting:", "### Compliance & Fraud Control"
+    if (/legal/i.test(trimmed) && (trimmed.endsWith(":") || trimmed.startsWith("#") || trimmed.startsWith("-") || trimmed.startsWith("*") || /^\d+\./.test(trimmed))) {
       currentAspect = "legal";
+      inPillarsSection = true;
       continue;
-    } else if (/compliance/i.test(trimmed) && (trimmed.endsWith(":") || trimmed.startsWith("#") || trimmed.startsWith("-") || trimmed.startsWith("*"))) {
+    } else if (/compliance/i.test(trimmed) && (trimmed.endsWith(":") || trimmed.startsWith("#") || trimmed.startsWith("-") || trimmed.startsWith("*") || /^\d+\./.test(trimmed))) {
       currentAspect = "compliance";
+      inPillarsSection = true;
       continue;
-    } else if (/accounting|escrow|finance/i.test(trimmed) && (trimmed.endsWith(":") || trimmed.startsWith("#") || trimmed.startsWith("-") || trimmed.startsWith("*"))) {
+    } else if (/accounting|escrow|finance/i.test(trimmed) && (trimmed.endsWith(":") || trimmed.startsWith("#") || trimmed.startsWith("-") || trimmed.startsWith("*") || /^\d+\./.test(trimmed))) {
       currentAspect = "accounting";
+      inPillarsSection = true;
       continue;
-    } else if (/tech|implementation|ops/i.test(trimmed) && (trimmed.endsWith(":") || trimmed.startsWith("#") || trimmed.startsWith("-") || trimmed.startsWith("*"))) {
+    } else if (/tech|implementation|ops/i.test(trimmed) && (trimmed.endsWith(":") || trimmed.startsWith("#") || trimmed.startsWith("-") || trimmed.startsWith("*") || /^\d+\./.test(trimmed))) {
       currentAspect = "implementation";
+      inPillarsSection = true;
       continue;
     }
 
@@ -1362,17 +1372,19 @@ export function syncTasksFromAIResponse(
     // Or: "1. [LEGAL] Task Title..."
     const bulletMatch = trimmed.match(/^[-*•\d.]+\s*(?:\[(LEGAL|COMPLIANCE|ACCOUNTING|TECH|OPS)\])?\s*(.+)/i);
     if (bulletMatch) {
-      let explicitAspect = bulletMatch[1]?.toLowerCase();
-      let rawTaskText = bulletMatch[2]?.replace(/[*_`]/g, "").trim() || "";
+      const explicitAspect = bulletMatch[1]?.toLowerCase();
+      const rawTaskText = bulletMatch[2]?.replace(/[*_`]/g, "").trim() || "";
 
-      if (rawTaskText.length < 8 || rawTaskText.toLowerCase().startsWith("client:") || rawTaskText.toLowerCase().startsWith("budget:")) {
+      // Ignore executive summary / metadata bullet items:
+      const isMetadataBullet = /^(?:client(?:\s*\/\s*project)?|campaign\s*type|phases?(?:\s*\/\s*structure)?|budget|volume|target|timeline|duration|reward\s*type|theme|mechanic|executive\s*summary|studio\s*drawer|spocs?\s*assigned)\s*[:\-–—]/i.test(rawTaskText);
+      if (isMetadataBullet || (!inPillarsSection && !explicitAspect)) {
+        continue;
+      }
+      if (rawTaskText.length < 8) {
         continue;
       }
 
-      let aspect: AspectTask["aspect"] = currentAspect;
-      if (explicitAspect) {
-        aspect = explicitAspect === "legal" ? "legal" : explicitAspect === "compliance" ? "compliance" : explicitAspect === "accounting" ? "accounting" : "implementation";
-      }
+      const aspect: AspectTask["aspect"] = (explicitAspect as AspectTask["aspect"]) || currentAspect || "legal";
 
       const sopMatch = rawTaskText.match(/SOP-([A-Z]{3})-\d+/i);
       const cleanTitle = rawTaskText.replace(/^SOP-[A-Z]{3}-\d+[:\-–—\s]*/i, "").split(/[.;—–]/)[0].trim();
@@ -1432,7 +1444,29 @@ export function syncTasksFromAIResponse(
 }
 
 /**
- * Parses AI response text for campaign-level field changes (budget, name, volume, rewardType)
+ * Validates whether an extracted string is a realistic campaign name.
+ */
+function isInvalidCampaignName(candidate: string): boolean {
+  const c = candidate.trim().toLowerCase();
+  return (
+    !c ||
+    c.startsWith("&") ||
+    c.startsWith("and ") ||
+    c.startsWith("or ") ||
+    c.includes("operational plan") ||
+    c.includes("executive summary") ||
+    c.includes("operational pillar") ||
+    c.includes("sop precedent") ||
+    c.includes("drawer update") ||
+    c === "campaign" ||
+    c === "project" ||
+    c.length < 3 ||
+    c.length > 80
+  );
+}
+
+/**
+ * Parses AI response text for campaign-level field changes (budget, name, volume, rewardType, client)
  * and returns the updated campaign data.
  */
 export function syncCampaignDataFromAIResponse(
@@ -1446,7 +1480,7 @@ export function syncCampaignDataFromAIResponse(
   const updated = { ...currentCampaign };
   let changed = false;
 
-  // Extract budget
+  // 1. Extract budget
   const budgetPatterns = [
     /(?:revised\s+)?(?:total\s+)?(?:campaign\s+)?budget\s*[:\-–—]?\s*(?:₹|inr|rs\.?)\s*([0-9,.]+)\s*(lakhs?|lac|cr|crore|k|m)?/i,
     /(?:updated|adjusted|changed|set|revised)\s+(?:to|at)\s+(?:₹|inr|rs\.?)\s*([0-9,.]+)\s*(lakhs?|lac|cr|crore|k|m)?/i,
@@ -1477,28 +1511,30 @@ export function syncCampaignDataFromAIResponse(
     }
   }
 
-  // Extract campaign name (supports "Executive Summary: Jaguar Scratch & Win Campaign", "Campaign Name: ...", etc.)
-  const namePatterns = [
-    /executive\s+summary\s*[:\-–—]?\s*[*_#\s]*([^\n*#]+?)(?:\s+Campaign)?(?:\n|\*|$)/i,
-    /campaign(?:\s+name)?\s*[:\-–—]\s*[*_#\s]*([^\n*#]+?)(?:\n|\*|$)/i,
-    /(?:renamed|name(?:d)?|called|titled)\s+(?:to|as)\s+["'\u201c\u201d]([^"'\u201c\u201d\n.]+?)["'\u201c\u201d]/i,
-    /(?:renamed|name(?:d)?)\s+from\s+.+?\s+to\s+["'\u201c\u201d]([^"'\u201c\u201d\n.]+?)["'\u201c\u201d]/i,
+  // 2. Extract client brand (e.g. "Client / Project: Jaguar", "active project **Jaguar ...**")
+  const clientPatterns = [
+    /(?:client(?:\s*\/\s*project)?|brand|account)\s*[:\-–—]\s*[*_#\s]*([A-Za-z0-9\s&.,'-]+?)(?:\s*\(|\n|\*|$)/i,
+    /active\s+project\s*[*_#\s]*([A-Za-z0-9]+)\b/i,
   ];
-  for (const pattern of namePatterns) {
+  for (const pattern of clientPatterns) {
     const match = responseText.match(pattern);
-    if (match && match[1] && match[1].trim().length >= 4) {
-      const parsedName = match[1].trim().replace(/^["'`]|["'`]$/g, "");
-      if (parsedName !== updated.name) {
-        updated.name = parsedName;
-        changed = true;
+    if (match && match[1]) {
+      const parsedClient = match[1].trim().replace(/^["'`]|["'`]$/g, "");
+      if (parsedClient && !/^(client|enterprise client|unknown|brand)$/i.test(parsedClient) && parsedClient.length >= 2 && parsedClient.length <= 40) {
+        if (parsedClient !== updated.client) {
+          updated.client = parsedClient;
+          changed = true;
+        }
         break;
       }
     }
   }
 
-  // Extract Reward Type / Mechanic
+  // 3. Extract Reward Type / Mechanic
   const rewardPatterns = [
     /(?:reward\s+(?:mechanic|type)|theme)\s*[:\-–—]\s*[*_#\s]*([^\n*#]+?)(?:\n|\*|$)/i,
+    /(?:updated|changed|switched)\s+to\s+(?:a\s+)?\*?\*?([A-Za-z\s&]+?Campaign)\*?\*?/i,
+    /(?:campaign\s+type)\s*[:\-–—]\s*[*_#\s]*([^\n*#]+?)(?:\n|\*|$)/i,
   ];
   for (const pattern of rewardPatterns) {
     const match = responseText.match(pattern);
@@ -1518,7 +1554,56 @@ export function syncCampaignDataFromAIResponse(
     }
   }
 
-  // Extract volume
+  // 4. Extract campaign name
+  const namePatterns = [
+    /(?:project|campaign)\s+\*\*([^*]+?)\*\*\s*(?:\([^*]+\)\s*)?has\s+been\s+updated\s+to\s+(?:a\s+)?\*\*([^*]+?)\*\*/i,
+    /campaign(?:\s+name)?\s*[:\-–—]\s*[*_#\s]*([^\n*#]+?)(?:\n|\*|$)/i,
+    /executive\s+summary\s*[:\-–—]\s*[*_#\s]*([^\n*#]+?)(?:\s+Campaign)?(?:\n|\*|$)/i,
+    /(?:renamed|name(?:d)?|called|titled)\s+(?:to|as)\s+["'\u201c\u201d]([^"'\u201c\u201d\n.]+?)["'\u201c\u201d]/i,
+    /(?:renamed|name(?:d)?)\s+from\s+.+?\s+to\s+["'\u201c\u201d]([^"'\u201c\u201d\n.]+?)["'\u201c\u201d]/i,
+  ];
+  for (const pattern of namePatterns) {
+    const match = responseText.match(pattern);
+    if (match) {
+      let parsedName = "";
+      if (match[2]) {
+        // e.g. "**Jaguar Scratch & Win** has been updated to a **Cashback Campaign**"
+        const baseProjectName = match[1].trim().replace(/\s+(Scratch & Win|Cashback|EGV|Merchandise).*$/i, "");
+        const targetMechanic = match[2].trim().replace(/\s*campaign$/i, "");
+        parsedName = `${baseProjectName} ${targetMechanic} Campaign`.trim();
+      } else if (match[1]) {
+        parsedName = match[1].trim().replace(/^["'`]|["'`]$/g, "");
+      }
+
+      if (parsedName && !isInvalidCampaignName(parsedName)) {
+        if (parsedName !== updated.name) {
+          updated.name = parsedName;
+          changed = true;
+          break;
+        }
+      }
+    }
+  }
+
+  // 5. Keep name in sync with rewardType changes (e.g. Jaguar Scratch & Win -> Jaguar Cashback)
+  if (updated.rewardType && updated.name) {
+    const mechanicKeywords = ["Scratch & Win", "Scratch and Win", "EGV", "Gift Card", "Merchandise", "Cashback"];
+    for (const mk of mechanicKeywords) {
+      if (mk !== updated.rewardType && new RegExp(`\\b${mk}\\b`, "i").test(updated.name)) {
+        updated.name = updated.name.replace(new RegExp(`\\b${mk}\\b`, "gi"), updated.rewardType);
+        changed = true;
+        break;
+      }
+    }
+    // If name is invalid or generic, synthesize proper brand name
+    if (isInvalidCampaignName(updated.name) || updated.name === "New Campaign Plan" || updated.name === "Campaign") {
+      const clientLabel = updated.client && !/^(client|enterprise client|unknown)$/i.test(updated.client) ? updated.client : "Promotional";
+      updated.name = `${clientLabel} ${updated.rewardType} Campaign`;
+      changed = true;
+    }
+  }
+
+  // 6. Extract volume
   const volumePatterns = [
     /(?:volume|codes?|packs?)\s*[:\-–—]?\s*([0-9,.]+)\s*(packs?|codes?|units?|k|m)?/i,
     /(?:scaled?|set|updated|adjusted)\s+to\s+([0-9,.]+)\s*(packs?|codes?|units?|k|m)?/i,

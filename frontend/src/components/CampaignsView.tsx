@@ -30,7 +30,7 @@ import ZohoProjectsDrawer from "./ZohoProjectsDrawer";
 import ChatMessage, { type Message } from "@/components/ChatMessage";
 import ChatInput from "@/components/ChatInput";
 import ThinkingProcess from "@/components/ThinkingProcess";
-import { applyPlanModifications } from "@/utils/planModifier";
+
 
 const ASPECT_META = {
   legal: {
@@ -442,40 +442,60 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
     setChatMessages((prev) => [...prev, userMsg]);
     setIsChatLoading(true);
 
-    setTimeout(() => {
-      setIsChatLoading(false);
-      if (!generatedPlan) return;
+    fetch("/api/ai/intent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: text,
+        activePlan: generatedPlan
+          ? {
+              campaignData: formData,
+              tasks: generatedPlan.tasks,
+              status: "draft",
+            }
+          : undefined,
+      }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        setIsChatLoading(false);
+        if (data.intent === "PLAN_MODIFY" && data.campaignData) {
+          if (data.tasks && data.tasks.length > 0) {
+            setGeneratedPlan((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    tasks: data.tasks,
+                  }
+                : null
+            );
+          }
+          setFormData((prev: any) => ({ ...prev, ...data.campaignData }));
+          showToast(`Plan updated with AI: ${(data.modifiedTaskIds || []).length} tasks updated`, "sparkle");
 
-      const modResult = applyPlanModifications(generatedPlan.tasks, formData, text);
-      if (modResult.hasModifications) {
-        setGeneratedPlan((prev) =>
-          prev
-            ? {
-                ...prev,
-                tasks: modResult.updatedTasks,
-              }
-            : null
-        );
-        setFormData(modResult.updatedCampaignData);
-        showToast(`Plan updated inline: ${modResult.modifiedTaskIds.length} tasks modified`, "sparkle");
-
-        const assistantMsg: Message = {
-          id: `msg-${Date.now()}-assistant`,
-          role: "assistant",
-          content: modResult.summaryMarkdown,
-          timestamp: new Date(),
-        };
-        setChatMessages((prev) => [...prev, assistantMsg]);
-      } else {
-        const assistantMsg: Message = {
-          id: `msg-${Date.now()}-assistant`,
-          role: "assistant",
-          content: `I've analyzed your instruction for **${formData.name}**. You can specify exact task modifications (e.g. _"assign all legal tasks to Akash Verma"_, _"change TAT to 1 day"_, or _"add a compliance task for TRAI DLT testing"_), or click **Open in Copilot** for split-screen studio editing.`,
-          timestamp: new Date(),
-        };
-        setChatMessages((prev) => [...prev, assistantMsg]);
-      }
-    }, 500);
+          const assistantMsg: Message = {
+            id: `msg-${Date.now()}-assistant`,
+            role: "assistant",
+            content: data.summaryMarkdown || "✨ Campaign plan updated successfully.",
+            timestamp: new Date(),
+          };
+          setChatMessages((prev) => [...prev, assistantMsg]);
+        } else {
+          const assistantMsg: Message = {
+            id: `msg-${Date.now()}-assistant`,
+            role: "assistant",
+            content:
+              data.reasoning ||
+              `I've analyzed your instruction for **${formData.name}**. You can specify exact campaign or task modifications, or click **Open in Copilot** for split-screen studio editing.`,
+            timestamp: new Date(),
+          };
+          setChatMessages((prev) => [...prev, assistantMsg]);
+        }
+      })
+      .catch((err) => {
+        setIsChatLoading(false);
+        console.warn("AI plan modification failed:", err);
+      });
   };
 
   const handleApproveAndPushToZoho = async () => {

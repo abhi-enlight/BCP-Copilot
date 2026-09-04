@@ -35,9 +35,6 @@ import EmptyState from "@/components/EmptyState";
 import { type PlanContextForCopilot } from "@/app/page";
 import { type AspectTask, type Campaign, generateAspectPlan } from "@/app/api/campaigns/route";
 import {
-  applyPlanModifications,
-  syncTasksFromAIResponse,
-  syncCampaignDataFromAIResponse,
   BIGCITY_TEAM,
   type TeamMember,
 } from "@/utils/planModifier";
@@ -149,6 +146,12 @@ export default function CopilotView({
 }: CopilotViewProps) {
   const [session, setSession] = useState<Session>(() => createSession());
   const [workingPlan, setWorkingPlan] = useState<WorkingPlanState | null>(null);
+  const activeWorkingPlanRef = useRef<WorkingPlanState | null>(null);
+
+  useEffect(() => {
+    activeWorkingPlanRef.current = workingPlan;
+  }, [workingPlan]);
+
   const [isLoading, setIsLoading] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [isPushingToZoho, setIsPushingToZoho] = useState(false);
@@ -893,144 +896,59 @@ export default function CopilotView({
                 messages: [...prev.messages, booksAlertMsg],
               }));
             }
-          } else if (
-            (intentData.intent === "PLAN_MODIFY" && workingPlan) ||
-            ((content.toLowerCase().includes("change") ||
-              content.toLowerCase().includes("rename") ||
-              content.toLowerCase().includes("set") ||
-              content.toLowerCase().includes("switch") ||
-              content.toLowerCase().includes("make") ||
-              content.toLowerCase().includes("update")) &&
-              (content.toLowerCase().includes("budget") ||
-                content.toLowerCase().includes("invoice") ||
-                content.toLowerCase().includes("amount") ||
-                content.toLowerCase().includes("name") ||
-                content.toLowerCase().includes("theme") ||
-                content.toLowerCase().includes("mechanic") ||
-                content.toLowerCase().includes("reward") ||
-                content.toLowerCase().includes("scratch") ||
-                content.toLowerCase().includes("cashback") ||
-                content.toLowerCase().includes("egv") ||
-                content.toLowerCase().includes("volume") ||
-                content.toLowerCase().includes("task")))
-          ) {
-            let targetPlan = workingPlan;
+          } else if (intentData.intent === "PLAN_MODIFY" && intentData.campaignData) {
+            const resolvedCampaignId = intentData.campaignId || workingPlan?.campaignId;
+            const resolvedDealId = intentData.zohoCrmDealId || workingPlan?.zohoCrmDealId;
+            const resolvedProjectId = intentData.zohoProjectId || workingPlan?.zohoProjectId;
+            const resolvedInvoiceId = intentData.zohoBooksInvoiceId || workingPlan?.zohoBooksInvoiceId;
 
-            // If no active workingPlan in studio, find the matching campaign from Supabase
-            if (!targetPlan) {
-              try {
-                const campRes = await fetch("/api/campaigns");
-                if (campRes.ok) {
-                  const campData = await campRes.json();
-                  const campaigns: Campaign[] = campData.campaigns || [];
-                  const matched =
-                    campaigns.find(
-                      (c) =>
-                        content.toLowerCase().includes(c.name.toLowerCase()) ||
-                        content.toLowerCase().includes(c.client.toLowerCase()) ||
-                        (c.name.split(" ")[0] && content.toLowerCase().includes(c.name.split(" ")[0].toLowerCase()))
-                    ) || campaigns[0];
+            const updatedPlan: WorkingPlanState = {
+              campaignId: resolvedCampaignId,
+              campaignData: intentData.campaignData,
+              tasks: intentData.tasks || workingPlan?.tasks || [],
+              aspectSummary: intentData.aspectSummary || workingPlan?.aspectSummary || { legal: 0, compliance: 0, accounting: 0, implementation: 0 },
+              status: intentData.status || workingPlan?.status || (resolvedDealId ? "live" : "draft"),
+              zohoCrmDealId: resolvedDealId,
+              zohoProjectId: resolvedProjectId,
+              zohoBooksInvoiceId: resolvedInvoiceId,
+              booksCustomerId: intentData.booksCustomerId || workingPlan?.booksCustomerId,
+            };
 
-                  if (matched) {
-                    targetPlan = {
-                      campaignId: matched.id,
-                      campaignData: {
-                        name: matched.name,
-                        client: matched.client,
-                        rewardType: matched.rewardType,
-                        budget: matched.budget,
-                        codeVolume: matched.codeVolume,
-                        startDate: matched.startDate,
-                        endDate: matched.endDate,
-                        brief: matched.brief,
-                      },
-                      tasks: matched.tasks || [],
-                      aspectSummary: matched.aspectSummary,
-                      status: "live",
-                      zohoCrmDealId: matched.zohoCrmDealId,
-                      zohoCrmDealUrl: matched.zohoCrmDealUrl,
-                      zohoProjectId: matched.zohoProjectId,
-                      zohoProjectUrl: matched.zohoProjectUrl,
-                      zohoBooksInvoiceId: matched.zohoBooksInvoiceId,
-                      zohoBooksInvoiceUrl: matched.zohoBooksInvoiceUrl,
-                      zohoSyncStatus: matched.zohoSyncStatus,
-                      booksCustomerId: matched.booksCustomerId,
-                    };
-                  }
-                }
-              } catch (e) {
-                console.warn("Failed to find campaign for chat modification:", e);
-              }
+            activePlan = updatedPlan;
+            activeWorkingPlanRef.current = updatedPlan;
+            setWorkingPlan(updatedPlan);
+            setIsPlanPanelOpen(true);
+
+            planModified = true;
+            modificationSummary = intentData.summaryMarkdown || "✨ Applied AI modifications to campaign plan.";
+            if (intentData.modifiedTaskIds && intentData.modifiedTaskIds.length > 0) {
+              setHighlightedTaskIds(intentData.modifiedTaskIds);
+              setTimeout(() => setHighlightedTaskIds([]), 6000);
             }
+            showToast(`✨ AI updated: ${intentData.campaignData.name}`, "sparkle");
 
-            // Fallback: If still no targetPlan, create dynamic draft plan from user prompt
-            if (!targetPlan) {
-              const nameMatch = content.match(/(?:update|change|modify|set|rename|switch|for)\s+(?:the\s+)?([A-Za-z0-9\s]+?)\s+(?:project|campaign|deal|to|budget|amount|name|theme|mechanic)/i);
-              const clientName = nameMatch ? nameMatch[1].trim() : "Campaign";
-              targetPlan = {
-                campaignData: {
-                  name: `${clientName} Campaign`,
-                  client: clientName,
-                  rewardType: "Cashback",
-                  budget: "₹1,00,00,000",
-                  codeVolume: "1,00,000",
-                  startDate: new Date().toISOString().split("T")[0],
-                  endDate: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().split("T")[0],
-                  brief: content,
-                },
-                tasks: [],
-                aspectSummary: { legal: 0, compliance: 0, accounting: 0, implementation: 0 },
-                status: "draft",
-              };
-            }
-
-            if (targetPlan) {
-              const modResult = applyPlanModifications(
-                targetPlan.tasks,
-                targetPlan.campaignData,
-                content
-              );
-
-              if (modResult.hasModifications) {
-                planModified = true;
-                modificationSummary = modResult.summaryMarkdown;
-
-                const updatedPlan: WorkingPlanState = {
-                  ...targetPlan,
-                  tasks: modResult.updatedTasks,
-                  campaignData: modResult.updatedCampaignData,
-                };
-                activePlan = updatedPlan;
-                setWorkingPlan(updatedPlan);
-
-                if (targetPlan.status === "live" || targetPlan.zohoCrmDealId || targetPlan.campaignId) {
-                  fetch("/api/campaigns", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      action: "update_live_campaign",
-                      campaignId: targetPlan.campaignId,
-                      dealId: targetPlan.zohoCrmDealId,
-                      projectId: targetPlan.zohoProjectId,
-                      invoiceId: targetPlan.zohoBooksInvoiceId,
-                      newName: modResult.updatedCampaignData.name,
-                      newBudget: modResult.updatedCampaignData.budget,
-                      newVolume: modResult.updatedCampaignData.codeVolume,
-                      rewardType: modResult.updatedCampaignData.rewardType,
-                      tasks: modResult.updatedTasks,
-                    }),
-                  })
-                    .then(() => {
-                      showToast(`✨ Synced updates to Zoho CRM, Books, and Projects!`, "check");
-                    })
-                    .catch((err) => console.warn("Live Zoho update failed:", err));
-                }
-
-                setIsPlanPanelOpen(true);
-                setHighlightedTaskIds(modResult.modifiedTaskIds);
-                setTimeout(() => setHighlightedTaskIds([]), 6000);
-                showToast(`✨ Updated campaign: ${modResult.updatedCampaignData.name}`, "sparkle");
-              }
+            if (updatedPlan.status === "live" || updatedPlan.zohoCrmDealId || updatedPlan.campaignId) {
+              fetch("/api/campaigns", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  action: "update_live_campaign",
+                  campaignId: updatedPlan.campaignId,
+                  dealId: updatedPlan.zohoCrmDealId,
+                  projectId: updatedPlan.zohoProjectId,
+                  invoiceId: updatedPlan.zohoBooksInvoiceId,
+                  client: intentData.campaignData.client,
+                  newName: intentData.campaignData.name,
+                  newBudget: intentData.campaignData.budget,
+                  newVolume: intentData.campaignData.codeVolume,
+                  rewardType: intentData.campaignData.rewardType,
+                  tasks: intentData.tasks,
+                }),
+              })
+                .then(() => {
+                  showToast(`✨ Synced updates to Zoho CRM, Books, and Projects!`, "check");
+                })
+                .catch((err) => console.warn("Live Zoho update failed:", err));
             }
           }
         }
@@ -1039,6 +957,10 @@ export default function CopilotView({
       }
 
       let promptToSend = content;
+
+      if (intent === "CHAT" && !activePlan) {
+        setIsPlanPanelOpen(false);
+      }
 
       // Build campaign context string so n8n has the right Zoho IDs to query
       let campaignContextStr: string | undefined;
@@ -1266,78 +1188,7 @@ export default function CopilotView({
               } catch {}
             }
 
-            // Dynamically sync tasks AND campaign data from AI response into right canvas
-            if (accumulatedContent) {
-              setWorkingPlan((prev) => {
-                const baseTasks = prev?.tasks || [];
-                const baseCampaign = prev?.campaignData || {
-                  name: "New Campaign Plan",
-                  client: "Client",
-                  rewardType: "Cashback",
-                  budget: "₹1,00,00,000",
-                  codeVolume: "1,00,000",
-                  startDate: new Date().toISOString().split("T")[0],
-                  endDate: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().split("T")[0],
-                  brief: "AI Generated Campaign",
-                };
 
-                const { updatedTasks, modifiedIds } = syncTasksFromAIResponse(
-                  accumulatedContent,
-                  baseTasks
-                );
-                const { updatedCampaign, changed } = syncCampaignDataFromAIResponse(
-                  accumulatedContent,
-                  baseCampaign
-                );
-
-                if (modifiedIds.length > 0) {
-                  setHighlightedTaskIds(modifiedIds);
-                  setTimeout(() => setHighlightedTaskIds([]), 5000);
-                  showToast(`✨ Synced ${modifiedIds.length} tasks from AI`, "sparkle");
-                }
-                if (changed) {
-                  showToast(`✨ Sidebar updated with latest campaign data`, "check");
-                }
-
-                if (!prev) {
-                  const hasPlanKeywords = /campaign|budget|task|project|invoice|escrow|reward/i.test(accumulatedContent);
-                  if (changed || modifiedIds.length > 0 || hasPlanKeywords) {
-                    setIsPlanPanelOpen(true);
-                    return {
-                      campaignData: updatedCampaign,
-                      tasks: updatedTasks,
-                      aspectSummary: { legal: 0, compliance: 0, accounting: 0, implementation: 0 },
-                      status: "draft",
-                    };
-                  }
-                  return null;
-                }
-
-                if (changed || modifiedIds.length > 0) {
-                  const campId = prev.campaignId;
-                  const cDealId = prev.zohoCrmDealId;
-                  if (campId || cDealId || prev.status === "live") {
-                    fetch("/api/campaigns", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        action: "update_live_campaign",
-                        campaignId: campId,
-                        dealId: cDealId,
-                        projectId: prev.zohoProjectId,
-                        invoiceId: prev.zohoBooksInvoiceId,
-                        newName: updatedCampaign.name,
-                        newBudget: updatedCampaign.budget,
-                        newVolume: updatedCampaign.codeVolume,
-                        rewardType: updatedCampaign.rewardType,
-                        tasks: updatedTasks,
-                      }),
-                    }).catch((err) => console.warn("Auto-sync from AI failed:", err));
-                  }
-                }
-                return { ...prev, tasks: updatedTasks, campaignData: updatedCampaign };
-              });
-            }
 
             // Ensure assistant message is ALWAYS rendered even if streaming ended without prior chunks
             if (!firstChunkReceived) {
@@ -1395,51 +1246,7 @@ export default function CopilotView({
             outputText = `${modificationSummary}\n\n---\n${outputText}`;
           }
 
-          if (outputText) {
-            setWorkingPlan((prev) => {
-              if (!prev) return null;
-              const { updatedTasks, modifiedIds } = syncTasksFromAIResponse(
-                outputText,
-                prev.tasks
-              );
-              if (modifiedIds.length > 0) {
-                setHighlightedTaskIds(modifiedIds);
-                setTimeout(() => setHighlightedTaskIds([]), 5000);
-                showToast(`✨ Synced ${modifiedIds.length} tasks from AI`, "sparkle");
-              }
-              // Sync campaign-level fields from AI response
-              const { updatedCampaign, changed } = syncCampaignDataFromAIResponse(
-                outputText,
-                prev.campaignData
-              );
-              if (changed) {
-                showToast(`✨ Sidebar updated with latest campaign data`, "check");
-              }
-              if (changed || modifiedIds.length > 0) {
-                const campId = prev.campaignId;
-                const cDealId = prev.zohoCrmDealId;
-                if (campId || cDealId || prev.status === "live") {
-                  fetch("/api/campaigns", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      action: "update_live_campaign",
-                      campaignId: campId,
-                      dealId: cDealId,
-                      projectId: prev.zohoProjectId,
-                      invoiceId: prev.zohoBooksInvoiceId,
-                      newName: updatedCampaign.name,
-                      newBudget: updatedCampaign.budget,
-                      newVolume: updatedCampaign.codeVolume,
-                      rewardType: updatedCampaign.rewardType,
-                      tasks: updatedTasks,
-                    }),
-                  }).catch((err) => console.warn("Auto-sync from AI failed:", err));
-                }
-              }
-              return { ...prev, tasks: updatedTasks, campaignData: updatedCampaign };
-            });
-          }
+
 
           const assistantMessage: Message = {
             id: `msg-${Date.now()}-assistant`,
@@ -1504,6 +1311,8 @@ export default function CopilotView({
   const handleNewChat = useCallback(() => {
     setSession(createSession());
     setWorkingPlan(null);
+    activeWorkingPlanRef.current = null;
+    setIsPlanPanelOpen(false);
     lastProcessedContextRef.current = null;
     if (onClearPlanContext) onClearPlanContext();
     userHasScrolledUpRef.current = false;

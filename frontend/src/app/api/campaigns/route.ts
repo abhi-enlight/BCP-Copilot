@@ -2355,6 +2355,29 @@ export async function POST(request: NextRequest) {
         const { data } = await supabase.from("campaigns").select("*").ilike("name", campaignData.name.trim()).maybeSingle();
         targetRow = data;
       }
+      if (!targetRow && campaignData.client && !/^(enterprise client|client|unknown)$/i.test(campaignData.client.trim())) {
+        const { data } = await supabase
+          .from("campaigns")
+          .select("*")
+          .ilike("client", campaignData.client.trim())
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        targetRow = data;
+      }
+      if (!targetRow && campaignData.name) {
+        const firstWord = campaignData.name.trim().split(" ")[0];
+        if (firstWord && firstWord.length > 2 && !/^(the|a|an|new|active|promotional|campaign|&)$/i.test(firstWord)) {
+          const { data } = await supabase
+            .from("campaigns")
+            .select("*")
+            .or(`client.ilike.%${firstWord}%,name.ilike.%${firstWord}%`)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (data) targetRow = data;
+        }
+      }
 
       let campaignId: string;
       if (targetRow) {
@@ -2856,6 +2879,17 @@ export async function POST(request: NextRequest) {
       if (!campRow && newName) {
         const { data } = await supabase.from("campaigns").select("*").ilike("name", `%${newName}%`).maybeSingle();
         campRow = data;
+      }
+      if (!campRow && body.client) {
+        const { data } = await supabase.from("campaigns").select("*").ilike("client", `%${body.client}%`).maybeSingle();
+        campRow = data;
+      }
+      if (!campRow && newName) {
+        const firstToken = newName.split(" ")[0];
+        if (firstToken && firstToken.length > 2) {
+          const { data } = await supabase.from("campaigns").select("*").ilike("name", `%${firstToken}%`).maybeSingle();
+          campRow = data;
+        }
       }
 
       const resolvedDealId = dealId || campRow?.zoho_crm_deal_id;
