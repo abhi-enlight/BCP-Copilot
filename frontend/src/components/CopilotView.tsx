@@ -37,6 +37,7 @@ import { type AspectTask, type Campaign, generateAspectPlan } from "@/app/api/ca
 import {
   applyPlanModifications,
   syncTasksFromAIResponse,
+  syncCampaignDataFromAIResponse,
   BIGCITY_TEAM,
   type TeamMember,
 } from "@/utils/planModifier";
@@ -1152,7 +1153,7 @@ export default function CopilotView({
               } catch {}
             }
 
-            // Dynamically sync tasks from AI response into right canvas
+            // Dynamically sync tasks AND campaign data from AI response into right canvas
             if (accumulatedContent) {
               setWorkingPlan((prev) => {
                 if (!prev) return null;
@@ -1165,7 +1166,15 @@ export default function CopilotView({
                   setTimeout(() => setHighlightedTaskIds([]), 5000);
                   showToast(`✨ Synced ${modifiedIds.length} tasks from AI`, "sparkle");
                 }
-                return { ...prev, tasks: updatedTasks };
+                // Sync campaign-level fields (budget, name, volume) from AI response
+                const { updatedCampaign, changed } = syncCampaignDataFromAIResponse(
+                  accumulatedContent,
+                  prev.campaignData
+                );
+                if (changed) {
+                  showToast(`✨ Sidebar updated with latest campaign data`, "check");
+                }
+                return { ...prev, tasks: updatedTasks, campaignData: updatedCampaign };
               });
             }
 
@@ -1237,7 +1246,15 @@ export default function CopilotView({
                 setTimeout(() => setHighlightedTaskIds([]), 5000);
                 showToast(`✨ Synced ${modifiedIds.length} tasks from AI`, "sparkle");
               }
-              return { ...prev, tasks: updatedTasks };
+              // Sync campaign-level fields from AI response
+              const { updatedCampaign, changed } = syncCampaignDataFromAIResponse(
+                outputText,
+                prev.campaignData
+              );
+              if (changed) {
+                showToast(`✨ Sidebar updated with latest campaign data`, "check");
+              }
+              return { ...prev, tasks: updatedTasks, campaignData: updatedCampaign };
             });
           }
 

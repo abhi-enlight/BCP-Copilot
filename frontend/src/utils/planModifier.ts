@@ -762,7 +762,19 @@ export function applyPlanModifications(
      lower.includes("₹") ||
      lower.includes("inr"));
 
-  if (isBudgetOrInvoiceChange) {
+  const isVolumeChange = lower.includes("volume") || lower.includes("packs") || lower.includes("codes");
+
+  // Fallback: implicit budget change — "change it to 20000000" without "budget" keyword
+  // Detect when there's a change/set/update + a bare large number (no other field context)
+  const isImplicitBudgetChange =
+    !isBudgetOrInvoiceChange &&
+    !isNameChange &&
+    !isVolumeChange &&
+    (lower.includes("change") || lower.includes("set") || lower.includes("update") || lower.includes("make")) &&
+    /(?:to|as|=|by)\s+(?:₹|inr|rs\.?)?\s*[0-9,.]{4,}/i.test(input) &&
+    !/(?:task|assign|reassign|rename|owner|legal|compliance|accounting|implementation|tech|t&c|nda|uat|dlt|trai|volume|pack|codes?)/i.test(lower);
+
+  if (isBudgetOrInvoiceChange || isImplicitBudgetChange) {
     const budgetMatch = input.match(/(?:to|as|=|is|\b)\s*(?:₹|inr|rs\.?)?\s*([0-9,.]+)\s*(lakhs?|lac|cr|crore|k|m)?/i);
     if (budgetMatch) {
       const numRaw = budgetMatch[1].replace(/,/g, "");
@@ -787,7 +799,6 @@ export function applyPlanModifications(
     }
   }
 
-  const isVolumeChange = lower.includes("volume") || lower.includes("packs") || lower.includes("codes");
   if (isVolumeChange) {
     const volumeMatch = input.match(/([0-9,.]+)\s*(?:packs?|codes?|units?|k|m|million|lakh)?/i);
     if (volumeMatch && (lower.includes("set") || lower.includes("change") || lower.includes("to"))) {
@@ -908,4 +919,98 @@ export function syncTasksFromAIResponse(
   }
 
   return { updatedTasks: tasks, modifiedIds };
+}
+
+/**
+ * Parses AI response text for campaign-level field changes (budget, name, volume)
+ * and returns the updated campaign data. This catches changes that the local
+ * applyPlanModifications regex missed (e.g. "change it to 20000000" without "budget" keyword).
+ */
+export function syncCampaignDataFromAIResponse(
+  responseText: string,
+  currentCampaign: any
+): { updatedCampaign: any; changed: boolean } {
+  if (!responseText || responseText.length < 20) {
+    return { updatedCampaign: currentCampaign, changed: false };
+  }
+
+  const updated = { ...currentCampaign };
+  let changed = false;
+  const lower = responseText.toLowerCase();
+
+  // Extract budget from patterns like:
+  //   "Budget: ₹2,00,00,000"  "Total Budget: ₹20,00,000"  "Revised Total Budget: ₹2,00,00,000"
+  //   "Updated to ₹2,00,00,000"  "Adjusted to ₹2,00,00,000"
+  const budgetPatterns = [
+    /(?:revised\s+)?(?:total\s+)?(?:campaign\s+)?budget\s*[:\-–—]?\s*(?:₹|inr|rs\.?)\s*([0-9,.]+)\s*(lakhs?|lac|cr|crore|k|m)?/i,
+    /(?:updated|adjusted|changed|set|revised)\s+(?:to|at)\s+(?:₹|inr|rs\.?)\s*([0-9,.]+)\s*(lakhs?|lac|cr|crore|k|m)?/i,
+    /(?:₹|inr|rs\.?)\s*([0-9,.]+)\s*(lakhs?|lac|cr|crore|k|m)?\s*(?:for|budget|invoice|escrow)/i,
+  ];
+
+  for (const pattern of budgetPatterns) {
+    const match = responseText.match(pattern);
+    if (match) {
+      const numRaw = match[1].replace(/,/g, "");
+      const unit = (match[2] || "").toLowerCase();
+      let numericVal = parseFloat(numRaw);
+      if (!isNaN(numericVal) && numericVal > 0) {
+        if (unit.startsWith("lakh") || unit.startsWith("lac")) numericVal *= 100000;
+        else if (unit.startsWith("cr")) numericVal *= 10000000;
+        else if (unit === "k") numericVal *= 1000;
+        else if (unit === "m") numericVal *= 1000000;
+
+        const newBudget = `₹${numericVal.toLocaleString("en-IN")}`;
+        // Only update if the parsed value differs from current (avoid no-op)
+        const currentAmount = currentCampaign.amount || 0;
+        if (numericVal !== currentAmount && numericVal > 0) {
+          updated.budget = newBudget;
+          updated.amount = numericVal;
+          changed = true;
+        }
+      }
+      break; // use first matching pattern
+    }
+  }
+
+  // Extract campaign name from patterns like:
+  //   "Campaign renamed to \"New Name\""  "Renamed from X to Y"
+  const namePatterns = [
+    /(?:renamed|name(?:d)?|called|titled)\s+(?:to|as)\s+["'\u201c\u201d]([^"'\u201c\u201d\n.]+?)["'\u201c\u201d]/i,
+    /(?:renamed|name(?:d)?)\s+from\s+.+?\s+to\s+["'\u201c\u201d]([^"'\u201c\u201d\n.]+?)["'\u201c\u201d]/i,
+  ];
+  for (const pattern of namePatterns) {
+    const match = responseText.match(pattern);
+    if (match && match[1] && match[1].trim().length >= 3) {
+      updated.name = match[1].trim();
+      changed = true;
+      break;
+    }
+  }
+
+  // Extract volume from patterns like:
+  //   "Volume: 500,000 packs"  "250000 packs"  "scaled to 500000 codes"
+  const volumePatterns = [
+    /(?:volume|codes?|packs?)\s*[:\-–—]?\s*([0-9,.]+)\s*(packs?|codes?|units?|k|m)?/i,
+    /(?:scaled?|set|updated|adjusted)\s+to\s+([0-9,.]+)\s*(packs?|codes?|units?|k|m)?/i,
+  ];
+  for (const pattern of volumePatterns) {
+    const match = responseText.match(pattern);
+    if (match && match[1]) {
+      const num = match[1].replace(/,/g, "");
+      const unit = (match[2] || "").toLowerCase();
+      let val = parseFloat(num);
+      if (!isNaN(val) && val > 0) {
+        if (unit === "k") val *= 1000;
+        else if (unit === "m") val *= 1000000;
+        const newVolume = `${val.toLocaleString("en-IN")} packs`;
+        if (updated.codeVolume !== newVolume) {
+          updated.codeVolume = newVolume;
+          changed = true;
+        }
+      }
+      break;
+    }
+  }
+
+  return { updatedCampaign: updated, changed };
 }

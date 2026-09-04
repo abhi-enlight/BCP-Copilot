@@ -2794,6 +2794,8 @@ export async function POST(request: NextRequest) {
           dealId: resolvedDealId,
           projectId: resolvedProjectId,
           invoiceId: resolvedInvoiceId,
+          customerId: campRow?.books_customer_id,
+          client: campRow?.client,
           campaignName: resolvedName,
           amount: numericAmount,
           budget: resolvedBudget,
