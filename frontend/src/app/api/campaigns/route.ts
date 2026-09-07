@@ -1929,7 +1929,7 @@ async function syncCampaignToZohoCRM(
         is_approved_by_manager: true,
         tasks,
       }),
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(12000),
     });
 
     if (!res.ok) {
@@ -1964,75 +1964,6 @@ async function syncCampaignToZohoCRM(
   } catch (err: any) {
     console.error("[ZohoCRM] Sync failed:", err.message);
     return { dealId: null, dealUrl: null, invoiceId: null, invoiceUrl: null, projectId: null, projectUrl: null, writeStatus: "FAILED" };
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Heal a CRM-synced campaign that is missing its Zoho Books invoice and/or
-// Zoho Projects project. Unlike syncCampaignToZohoCRM this NEVER creates a new
-// CRM deal — it asks n8n to provision only the missing products so campaigns
-// that partially synced earlier (timeout / silent node failure) can recover
-// without duplicating deals.
-// ---------------------------------------------------------------------------
-async function healMissingZohoProducts(
-  campaignId: string | null,
-  dealId: string,
-  campaignName: string,
-  client: string,
-  budget: string,
-  codeVolume: string,
-  tasks: AspectTask[],
-  booksCustomerId?: string | null
-): Promise<{ invoiceId: string | null; invoiceUrl: string | null; projectId: string | null; projectUrl: string | null; dealId: string | null; writeStatus: string }> {
-  const N8N_ZOHO_SYNC_WEBHOOK =
-    process.env.N8N_ZOHO_SYNC_WEBHOOK ||
-    "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-task-ingest-v2";
-
-  const taskSummary = tasks
-    .map((t, i) => `${i + 1}. [${t.aspect.toUpperCase()}] ${t.title} — Owner: ${t.assignee}, TAT: ${t.tat}, Urgency: ${t.urgency}`)
-    .join("\n");
-
-  try {
-    const res = await fetch(N8N_ZOHO_SYNC_WEBHOOK, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "sync_missing_products",
-        dealId,
-        campaignId,
-        campaignName,
-        client,
-        budget,
-        codeVolume,
-        booksCustomerId: booksCustomerId || undefined,
-        is_approved_by_manager: true,
-        tasks,
-        taskSummary,
-      }),
-      signal: AbortSignal.timeout(60000),
-    });
-
-    if (!res.ok) {
-      console.error(`[healMissingZohoProducts] n8n webhook returned ${res.status}`);
-      return { invoiceId: null, invoiceUrl: null, projectId: null, projectUrl: null, dealId: null, writeStatus: `WEBHOOK_ERROR_${res.status}` };
-    }
-
-    const body = (await res.json().catch(() => ({}))) as Record<string, any>;
-    const invoiceId: string | null = body?.invoice_id || body?.invoiceId || null;
-    const projectId: string | null = body?.project_id || body?.projectId || null;
-    const echoedDealId: string | null = body?.deal_id || body?.id || body?.dealId || dealId;
-
-    return {
-      invoiceId,
-      invoiceUrl: invoiceId ? `https://books.zoho.in/app#/invoices/${invoiceId}` : null,
-      projectId,
-      projectUrl: projectId ? `https://projects.zoho.in/portal/enlightlabdotcom#project/${projectId}` : null,
-      dealId: echoedDealId,
-      writeStatus: invoiceId || projectId ? "SYNCED" : "NO_PRODUCTS_CREATED",
-    };
-  } catch (err: any) {
-    console.error("[healMissingZohoProducts] Sync failed:", err.message);
-    return { invoiceId: null, invoiceUrl: null, projectId: null, projectUrl: null, dealId: null, writeStatus: "FAILED" };
   }
 }
 
@@ -2119,6 +2050,10 @@ export async function reconcileZohoCRMWithSupabase(): Promise<{
       const claimedDealIds = new Set<string>();
 
       for (const camp of existing) {
+        // Approval gate: drafts were never pushed to Zoho and must never be auto-linked
+        // to live Zoho CRM deals or deleted during Zoho CRM reconciliation.
+        if (camp.status === "draft") continue;
+
         const dealIdStr = camp.zoho_crm_deal_id ? String(camp.zoho_crm_deal_id) : "";
         if (dealIdStr) {
           if (!liveDealIds.has(dealIdStr)) {
@@ -2249,6 +2184,28 @@ export async function reconcileZohoCRMWithSupabase(): Promise<{
 }
 
 // ---------------------------------------------------------------------------
+// Helpers shared by draft / approve actions
+// ---------------------------------------------------------------------------
+function buildAspectSummary(tasks: any[]): Campaign["aspectSummary"] {
+  const aspects = ["legal", "compliance", "accounting", "implementation"] as const;
+  const seed: Campaign["aspectSummary"] = {
+    legal: { total: 0, done: 0, status: "Pending" },
+    compliance: { total: 0, done: 0, status: "Pending" },
+    accounting: { total: 0, done: 0, status: "Pending" },
+    implementation: { total: 0, done: 0, status: "Pending" },
+  };
+  return aspects.reduce<Campaign["aspectSummary"]>((acc, aspect) => {
+    const aspectTasks = (tasks || []).filter((t: any) => (t.aspect || "").toLowerCase() === aspect);
+    acc[aspect] = {
+      total: aspectTasks.length,
+      done: aspectTasks.filter((t: any) => t.status === "COMPLETED").length,
+      status: aspectTasks.length === 0 ? "Pending" : "In Review",
+    };
+    return acc;
+  }, seed);
+}
+
+// ---------------------------------------------------------------------------
 // GET handler
 // ---------------------------------------------------------------------------
 export async function GET(request: NextRequest) {
@@ -2351,6 +2308,141 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(result);
     }
 
+    // ── Action 0C: Save campaign as draft (Supabase ONLY — no Zoho writes) ──
+    // Human-in-the-loop gate: a draft can be reviewed and approved later;
+    // nothing is pushed to Zoho CRM / Projects / Books until explicit approval.
+    if (action === "save_draft") {
+      const { campaignData, tasks } = body;
+      if (!campaignData?.name || !campaignData?.client) {
+        return NextResponse.json({ error: "Campaign name and client are required" }, { status: 400 });
+      }
+
+      const now = new Date().toISOString();
+      const resolvedTasks = tasks && tasks.length > 0 ? tasks : generateDynamicBespokePlan(campaignData).tasks;
+      const aspectSummary = buildAspectSummary(resolvedTasks);
+
+      // Resolve Zoho Books Customer ID if already verified (read-only lookup — safe for drafts)
+      let booksCustomerId = body.booksCustomerId || campaignData.booksCustomerId || null;
+      if (!booksCustomerId && campaignData.client) {
+        const contactCheck = await checkZohoBooksContact(campaignData.client).catch(() => ({ exists: false, contact: undefined as any }));
+        if (contactCheck.exists && contactCheck.contact?.contactId) {
+          booksCustomerId = contactCheck.contact.contactId;
+        }
+      }
+
+      // 1. Update existing row if we have an id or a name match (avoid duplicates)
+      let targetRow: any = null;
+      if (body.campaignId) {
+        const { data } = await supabase.from("campaigns").select("*").eq("id", body.campaignId).maybeSingle();
+        targetRow = data;
+      }
+      if (!targetRow && campaignData.name) {
+        const { data } = await supabase.from("campaigns").select("*").ilike("name", campaignData.name.trim()).maybeSingle();
+        targetRow = data;
+      }
+
+      if (targetRow) {
+        await supabase
+          .from("campaigns")
+          .update({
+            name: campaignData.name || targetRow.name,
+            client: campaignData.client || targetRow.client,
+            category: campaignData.category || targetRow.category,
+            reward_type: campaignData.rewardType || targetRow.reward_type,
+            budget: campaignData.budget || targetRow.budget,
+            code_volume: campaignData.codeVolume || targetRow.code_volume,
+            start_date: campaignData.startDate || targetRow.start_date,
+            end_date: campaignData.endDate || targetRow.end_date,
+            brief: campaignData.brief || targetRow.brief,
+            tasks: resolvedTasks,
+            aspect_summary: aspectSummary,
+            status: "draft",
+            zoho_sync_status: "pending",
+            books_customer_id: booksCustomerId || targetRow.books_customer_id || null,
+          })
+          .eq("id", targetRow.id);
+      } else {
+        const { data: insertedRow, error: insertError } = await supabase
+          .from("campaigns")
+          .insert({
+            name: campaignData.name,
+            client: campaignData.client,
+            category: campaignData.category || "FMCG",
+            reward_type: campaignData.rewardType || "Cashback",
+            budget: campaignData.budget || "₹25,00,000",
+            code_volume: campaignData.codeVolume || "250,000 packs",
+            start_date: campaignData.startDate || now.split("T")[0],
+            end_date: campaignData.endDate || new Date(Date.now() + 90 * 86400000).toISOString().split("T")[0],
+            brief: campaignData.brief || "Draft campaign plan awaiting approval.",
+            status: "draft",
+            tasks: resolvedTasks,
+            aspect_summary: aspectSummary,
+            zoho_crm_deal_id: null,
+            zoho_crm_deal_url: null,
+            zoho_crm_deal_stage: null,
+            zoho_project_id: null,
+            zoho_project_url: null,
+            zoho_books_invoice_id: null,
+            zoho_books_invoice_url: null,
+            books_customer_id: booksCustomerId,
+            zoho_sync_status: "pending",
+            last_zoho_sync: null,
+            approved_at: null,
+            approved_by: null,
+          })
+          .select()
+          .single();
+        if (insertError) {
+          console.error("[save_draft] Supabase insert error:", insertError);
+          return NextResponse.json({ error: "Failed to save draft" }, { status: 500 });
+        }
+        targetRow = insertedRow;
+      }
+
+      return NextResponse.json({
+        success: true,
+        campaign: rowToCampaign(targetRow),
+        campaignId: targetRow.id,
+        note: "Saved as draft — nothing pushed to Zoho until approval",
+      });
+    }
+
+    // ── Action 0D: Discard a draft campaign (Supabase ONLY — no Zoho calls) ──
+    // Drafts were never pushed to Zoho, so discarding must not fire the Zoho
+    // delete webhook. Guarded: refuses to touch rows that have Zoho records.
+    if (action === "discard_draft") {
+      const { campaignId } = body;
+      if (!campaignId) return NextResponse.json({ error: "campaignId required" }, { status: 400 });
+
+      const { data: camp } = await supabase.from("campaigns").select("*").eq("id", campaignId).maybeSingle();
+      if (!camp) {
+        return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
+      }
+
+      // Safety net: never discard anything that already has Zoho resources
+      if (camp.zoho_crm_deal_id || camp.zoho_project_id || camp.zoho_books_invoice_id) {
+        return NextResponse.json(
+          {
+            error: "Refusing to discard: campaign already has Zoho records. Use delete_campaign instead.",
+            hasZohoResources: true,
+          },
+          { status: 409 }
+        );
+      }
+
+      const { error: deleteError } = await supabase.from("campaigns").delete().eq("id", campaignId);
+      if (deleteError) {
+        console.error("[discard_draft] Supabase delete error:", deleteError);
+        return NextResponse.json({ error: "Failed to discard draft" }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        success: true,
+        deletedName: camp.name,
+        note: "Draft discarded — Supabase row deleted, nothing to clean up in Zoho",
+      });
+    }
+
     // ── Action 1: Dynamic AI Plan Generation from Brief / Prompt ──
     if (action === "generate_plan") {
       const { campaignInput } = body;
@@ -2399,6 +2491,39 @@ export async function POST(request: NextRequest) {
       const now = new Date().toISOString();
       const resolvedTasks =
         tasks && tasks.length > 0 ? tasks : generateDynamicBespokePlan(campaignData).tasks;
+
+      // Guard: resolve the target row up-front. If it already has a Zoho CRM Deal,
+      // it was already approved & provisioned — never re-run full provisioning.
+      // (Prevents duplicate Deals / Projects / Invoices when a draft is approved twice.)
+      let existingRow: any = null;
+      if (body.campaignId) {
+        const { data } = await supabase.from("campaigns").select("*").eq("id", body.campaignId).maybeSingle();
+        existingRow = data;
+      }
+      if (!existingRow && campaignData.name) {
+        const { data } = await supabase.from("campaigns").select("*").ilike("name", campaignData.name.trim()).maybeSingle();
+        existingRow = data;
+      }
+      if (existingRow?.zoho_crm_deal_id) {
+        // Already provisioned: persist any plan edits, keep status live, no new Zoho writes
+        await supabase
+          .from("campaigns")
+          .update({
+            tasks: resolvedTasks,
+            aspect_summary: buildAspectSummary(resolvedTasks),
+            budget: campaignData.budget || existingRow.budget,
+            code_volume: campaignData.codeVolume || existingRow.code_volume,
+            status: "live",
+          })
+          .eq("id", existingRow.id);
+        const mergedRow = { ...existingRow, tasks: resolvedTasks, status: "live", aspect_summary: buildAspectSummary(resolvedTasks) };
+        return NextResponse.json({
+          success: true,
+          campaign: rowToCampaign(mergedRow),
+          alreadySynced: true,
+          note: "Campaign already approved & provisioned in Zoho — no duplicate records created",
+        });
+      }
 
       // Resolve Zoho Books Customer ID (or auto-create if flagged)
       let booksCustomerId = body.booksCustomerId || campaignData.booksCustomerId || null;
@@ -2456,12 +2581,7 @@ export async function POST(request: NextRequest) {
             brief: campaignData.brief || "AI-generated campaign plan.",
             status: "live",
             tasks: resolvedTasks,
-            aspect_summary: {
-              legal: { total: 3, done: 0, status: "In Review" },
-              compliance: { total: 3, done: 0, status: "In Review" },
-              accounting: { total: 3, done: 2, status: "In Review" },
-              implementation: { total: 4, done: 0, status: "In Review" },
-            },
+            aspect_summary: buildAspectSummary(resolvedTasks),
             zoho_crm_deal_id: null,
             zoho_crm_deal_url: null,
             zoho_crm_deal_stage: "Qualification",
@@ -2534,25 +2654,6 @@ export async function POST(request: NextRequest) {
             zoho_sync_status: "synced",
           })
           .eq("id", campaignId);
-      } else if (dealId) {
-        // CRM deal exists but the Books invoice / Projects project are missing (an earlier
-        // provisioning attempt failed or was interrupted). Heal by creating ONLY the missing
-        // products — the existing Zoho CRM deal is reused, never duplicated.
-        const healed = await healMissingZohoProducts(
-          campaignId,
-          dealId,
-          campaignData.name || targetRow?.name,
-          campaignData.client || targetRow?.client,
-          campaignData.budget || targetRow?.budget,
-          campaignData.codeVolume || targetRow?.code_volume,
-          resolvedTasks,
-          booksCustomerId || targetRow?.books_customer_id
-        );
-        invoiceId = healed.invoiceId || invoiceId;
-        invoiceUrl = healed.invoiceUrl || invoiceUrl;
-        projectId = healed.projectId || projectId;
-        projectUrl = healed.projectUrl || projectUrl;
-        writeStatus = healed.invoiceId || healed.projectId ? "SYNCED" : healed.writeStatus || "FAILED";
       } else {
         // Missing ANY resource (Deal, Project, or Invoice):
         // Trigger full ingestion to provision missing Zoho CRM deal, Zoho Projects project, and Zoho Books invoice!
@@ -2594,7 +2695,7 @@ export async function POST(request: NextRequest) {
         // 3. Update the Supabase record with all returned IDs and mark as synced
         if (campaignId) {
           const updatePayload: Record<string, any> = {
-            zoho_sync_status: dealId && projectId && invoiceId ? "synced" : dealId || projectId || invoiceId ? "partial" : "pending",
+            zoho_sync_status: dealId || projectId || invoiceId ? "synced" : "pending",
             last_zoho_sync: now,
           };
           if (dealId) {
@@ -2652,9 +2753,7 @@ export async function POST(request: NextRequest) {
         if (projectUrl) targetRow.zoho_project_url = projectUrl;
         if (invoiceId) targetRow.zoho_books_invoice_id = invoiceId;
         if (invoiceUrl) targetRow.zoho_books_invoice_url = invoiceUrl;
-        if (dealId || projectId || invoiceId) {
-          targetRow.zoho_sync_status = dealId && projectId && invoiceId ? "synced" : "partial";
-        }
+        if (dealId || projectId || invoiceId) targetRow.zoho_sync_status = "synced";
       }
 
       const savedCampaign: Campaign = targetRow
@@ -2683,12 +2782,7 @@ export async function POST(request: NextRequest) {
             zohoSyncStatus: dealId && projectId && invoiceId ? "Synced" : dealId ? "Partial" : "Pending",
             lastZohoSync: dealId ? "Just now" : undefined,
             brief: campaignData.brief,
-            aspectSummary: {
-              legal: { total: 3, done: 0, status: "In Review" },
-              compliance: { total: 3, done: 0, status: "In Review" },
-              accounting: { total: 3, done: 2, status: "In Review" },
-              implementation: { total: 4, done: 0, status: "In Review" },
-            },
+            aspectSummary: buildAspectSummary(resolvedTasks),
             tasks: resolvedTasks,
             createdAt: now,
             approvedAt: now,
@@ -2729,7 +2823,7 @@ export async function POST(request: NextRequest) {
               ? "n8n workflow triggered — awaiting Zoho Books confirmation"
               : "Awaiting Zoho CRM deal creation",
           },
-          overallSyncStatus: dealId && projectId && invoiceId ? "SYNCED" : dealId ? "PARTIAL" : "PENDING",
+          overallSyncStatus: dealId ? "SYNCED" : "PENDING",
           syncedAt: dealId ? now : null,
         },
       });
@@ -2741,11 +2835,11 @@ export async function POST(request: NextRequest) {
 
       let campaignRow: any = null;
       if (campaignId) {
-        const { data } = await supabase.from("campaigns").select("id, tasks").eq("id", campaignId).maybeSingle();
+        const { data } = await supabase.from("campaigns").select("id, status, tasks").eq("id", campaignId).maybeSingle();
         campaignRow = data;
       }
       if (!campaignRow && campaignName) {
-        const { data } = await supabase.from("campaigns").select("id, tasks").eq("name", campaignName).maybeSingle();
+        const { data } = await supabase.from("campaigns").select("id, status, tasks").eq("name", campaignName).maybeSingle();
         campaignRow = data;
       }
 
@@ -2763,44 +2857,60 @@ export async function POST(request: NextRequest) {
 
       const completed = tasks.filter((t) => t.status === "COMPLETED").length;
       const completionRate = Math.round((completed / tasks.length) * 100);
+      const isDraft = campaignRow.status === "draft";
+      const aspectSummary = buildAspectSummary(tasks);
+
+      const updatePayload: Record<string, any> = {
+        tasks,
+        aspect_summary: aspectSummary,
+      };
+      if (!isDraft) {
+        updatePayload.last_zoho_sync = new Date().toISOString();
+      }
 
       await supabase
         .from("campaigns")
-        .update({
-          tasks,
-          last_zoho_sync: new Date().toISOString(),
-        })
+        .update(updatePayload)
         .eq("id", campaignRow.id);
 
-      // Trigger webhook for task update
-      try {
-        const N8N_ZOHO_TASK_UPDATE_WEBHOOK = process.env.N8N_ZOHO_TASK_UPDATE_WEBHOOK || "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-task-update";
-        await fetch(N8N_ZOHO_TASK_UPDATE_WEBHOOK, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            campaignId: campaignRow.id,
-            taskId,
-            newStatus,
-            zohoCrmTaskId: task.zohoCrmTaskId
-          }),
-          signal: AbortSignal.timeout(5000),
-        });
-      } catch (err) {
-        console.warn("[update_zoho_task] Webhook failed:", err);
+      // Approval gate: DRAFT tasks have no Zoho CRM record — skip webhook entirely.
+      if (!isDraft && task.zohoCrmTaskId) {
+        try {
+          const N8N_ZOHO_TASK_UPDATE_WEBHOOK = process.env.N8N_ZOHO_TASK_UPDATE_WEBHOOK || "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-task-update";
+          await fetch(N8N_ZOHO_TASK_UPDATE_WEBHOOK, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              campaignId: campaignRow.id,
+              taskId,
+              newStatus,
+              zohoCrmTaskId: task.zohoCrmTaskId
+            }),
+            signal: AbortSignal.timeout(5000),
+          });
+        } catch (err) {
+          console.warn("[update_zoho_task] Webhook failed:", err);
+        }
       }
 
       return NextResponse.json({
         success: true,
         task,
         completionRate,
-        zohoUpdate: {
-          product: "Zoho CRM",
-          module: "Tasks (sub-record of Deal)",
-          zohoCrmTaskId: task.zohoCrmTaskId,
-          newStatus: task.zohoCrmTaskStatus,
-          timestamp: new Date().toISOString(),
-        },
+        zohoUpdate: isDraft
+          ? {
+              product: "Local Store",
+              status: "SAVED_LOCAL_DRAFT",
+              skipped: "draft_not_synced",
+              note: "Task status saved locally — syncs to Zoho upon approval",
+            }
+          : {
+              product: "Zoho CRM",
+              module: "Tasks (sub-record of Deal)",
+              zohoCrmTaskId: task.zohoCrmTaskId,
+              newStatus: task.zohoCrmTaskStatus,
+              timestamp: new Date().toISOString(),
+            },
       });
     }
 
@@ -2815,6 +2925,7 @@ export async function POST(request: NextRequest) {
       let resolvedBudget = "";
       let resolvedCodeVolume = "";
 
+      let resolvedStatus: string | null = null;
       if (campaignId) {
         const { data: row } = await supabase.from("campaigns").select("*").eq("id", campaignId).maybeSingle();
         if (row) {
@@ -2822,21 +2933,39 @@ export async function POST(request: NextRequest) {
           resolvedClient = row.client || "";
           resolvedBudget = row.budget || "";
           resolvedCodeVolume = row.code_volume || "";
+          resolvedStatus = row.status;
         }
-        await supabase.from("campaigns").update({ tasks, last_zoho_sync: now }).eq("id", campaignId);
+        const updatePayload: Record<string, any> = {
+          tasks,
+          aspect_summary: buildAspectSummary(tasks),
+        };
+        if (resolvedStatus !== "draft") {
+          updatePayload.last_zoho_sync = now;
+        }
+        await supabase.from("campaigns").update(updatePayload).eq("id", campaignId);
       } else if (campaignName) {
         const { data: row } = await supabase.from("campaigns").select("*").eq("name", campaignName).maybeSingle();
         if (row) {
           resolvedCampaignId = row.id;
+          resolvedCampaignName = row.name;
           resolvedClient = row.client || "";
           resolvedBudget = row.budget || "";
           resolvedCodeVolume = row.code_volume || "";
+          resolvedStatus = row.status;
         }
-        await supabase.from("campaigns").update({ tasks, last_zoho_sync: now }).eq("name", campaignName);
+        const updatePayload: Record<string, any> = {
+          tasks,
+          aspect_summary: buildAspectSummary(tasks),
+        };
+        if (resolvedStatus !== "draft") {
+          updatePayload.last_zoho_sync = now;
+        }
+        await supabase.from("campaigns").update(updatePayload).eq("name", campaignName);
       }
 
       // If campaign is pending Zoho sync, re-fire the n8n webhook with campaignId
-      if (resolvedCampaignId && resolvedCampaignName) {
+      // Approval gate: DRAFT campaigns must never trigger Zoho provisioning.
+      if (resolvedCampaignId && resolvedCampaignName && resolvedStatus !== "draft") {
         try {
           // Check if campaign still has no deal ID
           const { data: checkRow } = await supabase
@@ -2919,88 +3048,6 @@ export async function POST(request: NextRequest) {
     }
 
 
-    // ── Action: Complete a partial Zoho sync (CRM deal exists, Books/Projects missing) ──
-    if (action === "complete_zoho_sync") {
-      const { campaignId } = body;
-      if (!campaignId) return NextResponse.json({ error: "campaignId required" }, { status: 400 });
-
-      const { data: row } = await supabase
-        .from("campaigns")
-        .select("*")
-        .eq("id", campaignId)
-        .maybeSingle();
-
-      if (!row) return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
-      if (!row.zoho_crm_deal_id) {
-        return NextResponse.json(
-          { error: "no_deal", message: "Campaign has no Zoho CRM deal yet — approve it first." },
-          { status: 409 }
-        );
-      }
-      if (row.zoho_project_id && row.zoho_books_invoice_id) {
-        return NextResponse.json({ success: true, alreadyComplete: true, campaign: rowToCampaign(row) });
-      }
-
-      const healed = await healMissingZohoProducts(
-        row.id,
-        String(row.zoho_crm_deal_id),
-        row.name || "Campaign Deal",
-        row.client || "Enterprise Client",
-        row.budget || "₹0",
-        row.code_volume || "",
-        (row.tasks || []) as AspectTask[],
-        row.books_customer_id
-      );
-
-      const healedAt = new Date().toISOString();
-      const updates: Record<string, any> = { last_zoho_sync: healedAt };
-      if (healed.invoiceId) {
-        updates.zoho_books_invoice_id = healed.invoiceId;
-        updates.zoho_books_invoice_url = healed.invoiceUrl;
-      }
-      if (healed.projectId) {
-        updates.zoho_project_id = healed.projectId;
-        updates.zoho_project_url = healed.projectUrl;
-      }
-      updates.zoho_sync_status =
-        row.zoho_crm_deal_id &&
-        (updates.zoho_books_invoice_id || row.zoho_books_invoice_id) &&
-        (updates.zoho_project_id || row.zoho_project_id)
-          ? "synced"
-          : "partial";
-
-      const { data: updatedRow } = await supabase
-        .from("campaigns")
-        .update(updates)
-        .eq("id", row.id)
-        .select()
-        .single();
-
-      const finalCampaign = updatedRow || { ...row, ...updates };
-      return NextResponse.json({
-        success: true,
-        campaign: rowToCampaign(finalCampaign),
-        zohoSync: {
-          crmDeal: {
-            product: "Zoho CRM",
-            module: "Deals",
-            dealId: row.zoho_crm_deal_id,
-            writeStatus: "SYNCED",
-          },
-          projects: {
-            product: "Zoho Projects",
-            projectId: healed.projectId || row.zoho_project_id || null,
-            status: healed.projectId || row.zoho_project_id ? "SYNCED" : "FAILED",
-          },
-          books: {
-            product: "Zoho Books",
-            invoiceId: healed.invoiceId || row.zoho_books_invoice_id || null,
-            status: healed.invoiceId || row.zoho_books_invoice_id ? "SYNCED" : "FAILED",
-          },
-        },
-      });
-    }
-
     // ── Action 5: Validate Zoho deal IDs exist and sync ──
     if (action === "validate_and_sync") {
       const syncResult = await reconcileZohoCRMWithSupabase();
@@ -3014,6 +3061,13 @@ export async function POST(request: NextRequest) {
 
       const { data: camp } = await supabase.from("campaigns").select("*").eq("id", campaignId).maybeSingle();
       if (camp) {
+        // Approval gate: a never-synced draft has no Zoho resources to wipe —
+        // skip the delete webhook entirely so we never send null/empty payloads.
+        if (camp.status === "draft" && !camp.zoho_crm_deal_id && !camp.zoho_project_id && !camp.zoho_books_invoice_id) {
+          await supabase.from("campaigns").delete().eq("id", campaignId);
+          return NextResponse.json({ success: true, deletedName: camp.name, note: "Draft deleted — no Zoho resources to clean up" });
+        }
+
         const N8N_ZOHO_DELETE_WEBHOOK =
           process.env.N8N_ZOHO_DELETE_WEBHOOK ||
           "https://indigo-pelican-266513.hostingersite.com/webhook/bcp-delete-zoho-resources";
@@ -3075,6 +3129,37 @@ export async function POST(request: NextRequest) {
       const numericAmount = parseFloat(String(resolvedBudget || "0").replace(/[^0-9.]/g, "")) || 0;
       const resolvedTasks = Array.isArray(tasks) && tasks.length > 0 ? tasks : (campRow?.tasks || []);
       const resolvedRewardType = rewardType || campRow?.reward_type || "Cashback";
+
+      // Approval gate: drafts (no Zoho deal) must only persist to Supabase —
+      // never fire the Zoho update webhook. Zoho writes require prior approval.
+      const isDraftCampaign =
+        (campRow?.status === "draft") ||
+        (!resolvedDealId && !resolvedProjectId && !resolvedInvoiceId);
+      if (isDraftCampaign) {
+        const targetDraftId = campRow?.id || campaignId;
+        if (targetDraftId) {
+          const updates: Record<string, any> = {};
+          if (resolvedName) updates.name = resolvedName;
+          if (resolvedBudget) updates.budget = resolvedBudget;
+          if (newVolume) updates.code_volume = newVolume;
+          if (resolvedRewardType) updates.reward_type = resolvedRewardType;
+          if (resolvedTasks && resolvedTasks.length > 0) {
+            updates.tasks = resolvedTasks;
+            updates.aspect_summary = buildAspectSummary(resolvedTasks);
+          }
+          if (Object.keys(updates).length > 0) {
+            await supabase.from("campaigns").update(updates).eq("id", targetDraftId);
+          }
+        }
+        return NextResponse.json({
+          success: true,
+          campaignName: resolvedName,
+          budget: resolvedBudget,
+          tasksCount: resolvedTasks.length,
+          skipped: "draft_not_synced",
+          note: "Draft campaign updated in the local store only — approve the plan to sync changes to Zoho",
+        });
+      }
 
       const taskSummary = resolvedTasks
         .map((t: any, i: number) => `${i + 1}. [${(t.aspect || "").toUpperCase()}] ${t.title || t.name} — Owner: ${t.assignee || "TBD"}, TAT: ${t.tat || "2 Days"}, Urgency: ${t.urgency || "HIGH"}`)

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import ZohoApprovalModal from "./ZohoApprovalModal";
 import {
   Plus,
   DownloadSimple,
@@ -27,6 +28,7 @@ import {
   Funnel,
   Info,
   WarningCircle,
+  FloppyDisk,
 } from "@phosphor-icons/react";
 import ChatMessage, { type Message } from "@/components/ChatMessage";
 import ChatInput from "@/components/ChatInput";
@@ -166,6 +168,10 @@ export default function CopilotView({
   const [taskSearchQuery, setTaskSearchQuery] = useState("");
   const [highlightedTaskIds, setHighlightedTaskIds] = useState<string[]>([]);
   const [isAddTaskModalOpen, setIsAddTaskModalOpen] = useState(false);
+
+  // Approval gate state — the Zoho push only fires after explicit modal confirmation
+  const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
 
   // UI Toast Confirmation Banner State
   const [toastNotice, setToastNotice] = useState<{
@@ -387,6 +393,9 @@ export default function CopilotView({
         if (res.ok) {
           const json = await res.json();
           if (json.found && json.campaign) {
+            // A campaign counts as approved only when it has real Zoho IDs —
+            // a saved draft (status draft, no deal) still shows the approve action.
+            const hasZohoDeal = Boolean(json.campaign.zohoCrmDealId);
             const hasAllZohoProducts = Boolean(
               json.campaign.zohoCrmDealId &&
               json.campaign.zohoProjectId &&
@@ -396,7 +405,8 @@ export default function CopilotView({
               campaignData: initialPlanContext.campaignData,
               tasks: json.campaign.tasks?.length > 0 ? json.campaign.tasks : initialPlanContext.plan.tasks,
               aspectSummary: json.campaign.aspectSummary || initialPlanContext.plan.aspectSummary,
-              status: hasAllZohoProducts ? "live" : "draft",
+              status: hasZohoDeal ? "live" : "draft",
+              campaignId: json.campaign.id,
               zohoCrmDealId: json.campaign.zohoCrmDealId,
               zohoCrmDealUrl: json.campaign.zohoCrmDealUrl,
               zohoProjectId: json.campaign.zohoProjectId,
@@ -405,14 +415,13 @@ export default function CopilotView({
               zohoBooksInvoiceUrl: json.campaign.zohoBooksInvoiceUrl,
               zohoSyncStatus: json.campaign.zohoSyncStatus,
               booksCustomerId: json.campaign.booksCustomerId,
-              campaignId: json.campaign.id,
             });
             checkAndPromptBooksContact(initialPlanContext.campaignData.client);
             if (hasAllZohoProducts) {
               showToast("Campaign already approved & synced to Zoho", "check");
               return true;
             } else {
-              showToast("Campaign loaded — ready to approve & sync to Zoho", "info");
+              showToast(hasZohoDeal ? "Campaign loaded — sync completing…" : "Draft loaded — ready to approve & sync to Zoho", "info");
               return false;
             }
           }
@@ -483,7 +492,9 @@ export default function CopilotView({
   }, [workingPlan, selectedAspectFilter, taskSearchQuery]);
 
   // Handle approve & sync campaign to Zoho CRM (Deal), Zoho Projects, Zoho Books
-  const handleApprovePlanToZoho = async (overrideSkipBooksCheck = false, contactIdOverride?: string) => {
+  // STEP 1 — Pre-flight checks, then open the review modal. NEVER pushes directly:
+  // the actual Zoho write happens in confirmApprovePlanToZoho after explicit confirmation.
+  const handleOpenApprovalModal = async (contactIdOverride?: string) => {
     let targetPlanState = workingPlan;
 
     // Fallback: If no working plan is active in state, fetch the latest campaign from Supabase API
@@ -553,7 +564,6 @@ export default function CopilotView({
     const targetBooksId = contactIdOverride || targetPlanState.booksCustomerId;
 
     if (
-      !overrideSkipBooksCheck &&
       targetPlanState.booksContact &&
       !targetPlanState.booksContact.exists &&
       !targetBooksId
@@ -564,6 +574,19 @@ export default function CopilotView({
       setIsBooksModalOpen(true);
       return;
     }
+
+    setIsLoading(false);
+    setIsThinking(false);
+    setToolCallLabel(null);
+    setIsApprovalModalOpen(true);
+  };
+
+  // STEP 2 — Runs ONLY on explicit user confirmation inside ZohoApprovalModal.
+  const confirmApprovePlanToZoho = async () => {
+    const targetPlanState = workingPlan;
+    if (!targetPlanState) return;
+
+    const targetBooksId = targetPlanState.booksCustomerId;
 
     setIsPushingToZoho(true);
     setWorkingPlan((prev) => (prev ? { ...prev, status: "syncing" } : { ...targetPlanState!, status: "syncing" }));
@@ -582,7 +605,12 @@ export default function CopilotView({
       });
 
       if (res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
+        if (!data.campaign) {
+          showToast(data.error || "Failed to sync to Zoho", "info");
+          setWorkingPlan((prev) => (prev ? { ...prev, status: "draft" } : null));
+          return;
+        }
         const created = data.campaign as Campaign;
         const zohoSync = data.zohoSync;
         const assignedNames = Array.from(new Set((targetPlanState.tasks || []).map((t) => t.assignee))).join(", ");
@@ -625,6 +653,7 @@ export default function CopilotView({
           prev
             ? {
                 ...prev,
+                campaignId: created.id || prev.campaignId,
                 status: "live",
                 zohoCrmDealId: crmDealId || prev.zohoCrmDealId,
                 zohoCrmDealUrl: crmDealUrl || prev.zohoCrmDealUrl,
@@ -655,28 +684,72 @@ export default function CopilotView({
             `### Zoho Product Sync Status\n\n` +
             `| Product | Purpose | Status | ID |\n` +
             `|---------|---------|--------|----|\n` +
-            `| **Zoho CRM** | Campaign Deal (client opportunity & campaign record) | ${crmDealId ? "✅ Synced" : "⏳ Pending"} | ${crmDealId ? `\`${crmDealId}\`` : "—"} |\n` +            `| **Zoho Projects** | Task & milestone execution tracker | ${projectId ? "✅ Synced" : crmDealId ? "⚠️ Missing — approve again to create" : "⏳ Queued"} | ${projectId ? `\`${projectId}\`` : "—"} |\n` +
-            `| **Zoho Books** | Advance payment, escrow & GST invoicing | ${invoiceId ? "✅ Synced" : crmDealId ? "⚠️ Missing — approve again to create" : "⏳ Queued"} | ${invoiceId ? `\`${invoiceId}\`` : "—"} |\n\n` +
-            `SPOCs assigned: ${assignedNames}` +
-            (crmDealId && (!projectId || !invoiceId)
-              ? `\n\n> ⚠️ **Partial sync:** the CRM deal is live, but Zoho Books / Projects were not confirmed on this attempt — the Zoho API call likely timed out or lacked access. Click **Approve & Sync to Zoho** again to create only the missing records; the existing deal will **not** be duplicated.`
-              : ""),
-            timestamp: new Date(),
+            `| **Zoho CRM** | Campaign Deal (client opportunity & campaign record) | ${crmDealId ? "✅ Synced" : "⏳ Pending"} | ${crmDealId ? `\`${crmDealId}\`` : "—"} |\n` +
+            `| **Zoho Projects** | Task & milestone execution tracker | ${projectId ? "✅ Synced" : "⏳ Pending"} | ${projectId ? `\`${projectId}\`` : "—"} |\n` +
+            `| **Zoho Books** | Advance payment, escrow & GST invoicing | ${invoiceId ? "✅ Synced" : "⏳ Pending"} | ${invoiceId ? `\`${invoiceId}\`` : "—"} |\n\n` +
+            `SPOCs assigned: ${assignedNames}`,
+          timestamp: new Date(),
         };
 
         setSession((prev) => ({
           ...prev,
           messages: [...prev.messages, confirmationMsg],
         }));
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        showToast(errData.error || "Failed to sync to Zoho", "info");
+        setWorkingPlan((prev) => (prev ? { ...prev, status: "draft" } : null));
       }
     } catch (e) {
       console.error("Failed to sync campaign to Zoho", e);
       showToast("Failed to sync to Zoho — check network", "info");
+      setWorkingPlan((prev) => (prev ? { ...prev, status: "draft" } : null));
     } finally {
       setIsPushingToZoho(false);
       setIsLoading(false);
       setIsThinking(false);
       setToolCallLabel(null);
+      setIsApprovalModalOpen(false);
+    }
+  };
+
+  // Save the working plan as a DRAFT (Supabase only — nothing pushed to Zoho).
+  // Keeps the returned campaignId so a later approval updates the same row.
+  const handleSaveWorkingPlanAsDraft = async () => {
+    if (!workingPlan) return;
+    setIsSavingDraft(true);
+    try {
+      const res = await fetch("/api/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "save_draft",
+          campaignId: workingPlan.campaignId,
+          campaignData: workingPlan.campaignData,
+          tasks: workingPlan.tasks,
+          booksCustomerId: workingPlan.booksCustomerId,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.campaign) {
+        setWorkingPlan((prev) =>
+          prev
+            ? {
+                ...prev,
+                campaignId: data.campaign.id || prev.campaignId,
+                status: "draft",
+              }
+            : prev
+        );
+        showToast("Draft saved — nothing pushed to Zoho. Approve it later from Campaigns.", "info");
+      } else {
+        showToast(data.error || "Failed to save draft", "info");
+      }
+    } catch (e) {
+      console.error("Failed to save draft from copilot", e);
+      showToast("Failed to save draft — check network", "info");
+    } finally {
+      setIsSavingDraft(false);
     }
   };
 
@@ -865,6 +938,7 @@ export default function CopilotView({
       let planModified = false;
       let modificationSummary = "";
       let intent = "CHAT";
+      let planCreatedViaChat = false;
 
       // 🧠 Let AI understand the prompt and intent dynamically
       try {
@@ -886,10 +960,23 @@ export default function CopilotView({
             setIsLoading(false);
             setIsThinking(false);
             setToolCallLabel(null);
-            await handleApprovePlanToZoho();
-            setIsLoading(false);
-            setIsThinking(false);
-            setToolCallLabel(null);
+            // Approval gate: chat approval NEVER pushes directly — it opens the
+            // review modal listing what will be created. The Zoho write happens
+            // only after an explicit click on "Approve & Push to Zoho" there.
+            const reviewMsg: Message = {
+              id: `msg-${Date.now()}-assistant-approval-review`,
+              role: "assistant",
+              content:
+                `### 🔒 Approval required before Zoho sync\n\n` +
+                `Here's what will be created once you confirm:\n\n` +
+                `* **Zoho CRM** — Deal for **${activeWorkingPlanRef.current?.campaignData.name || "the campaign"}** (stage: Qualification)\n` +
+                `* **Zoho Projects** — Project with ${(activeWorkingPlanRef.current?.tasks || []).length} tasks\n` +
+                `* **Zoho Books** — Advance invoice for **${activeWorkingPlanRef.current?.campaignData.budget || "the budget"}**\n\n` +
+                `Review the summary in the approval dialog — nothing is pushed to Zoho until you click **Approve & Push to Zoho**.`,
+              timestamp: new Date(),
+            };
+            setSession((prev) => ({ ...prev, messages: [...prev.messages, reviewMsg] }));
+            await handleOpenApprovalModal();
             return;
           }
 
@@ -907,6 +994,7 @@ export default function CopilotView({
             setWorkingPlan(newWorkingPlan);
             setIsPlanPanelOpen(true);
             setToolCallLabel("Generated 4-aspect operational matrix…");
+            planCreatedViaChat = true;
             showToast(
               `✨ AI generated ${intentData.plan.tasks.length} bespoke tasks for ${intentData.campaignData.name}`,
               "sparkle"
@@ -960,7 +1048,9 @@ export default function CopilotView({
             }
             showToast(`✨ AI updated: ${intentData.campaignData.name}`, "sparkle");
 
-            if (updatedPlan.status === "live" || updatedPlan.zohoCrmDealId || updatedPlan.campaignId) {
+            // Approval gate: live campaigns sync across Zoho; saved drafts persist
+            // to Supabase only (server returns skipped: "draft_not_synced" with zero Zoho calls).
+            if (updatedPlan.campaignId) {
               fetch("/api/campaigns", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -978,10 +1068,15 @@ export default function CopilotView({
                   tasks: intentData.tasks,
                 }),
               })
-                .then(() => {
-                  showToast(`✨ Synced updates to Zoho CRM, Books, and Projects!`, "check");
+                .then(async (res) => {
+                  const data = await res.json().catch(() => ({}));
+                  if (data.skipped === "draft_not_synced") {
+                    showToast(`✨ Draft plan updated in database`, "check");
+                  } else if (res.ok) {
+                    showToast(`✨ Synced updates to Zoho CRM, Books, and Projects!`, "check");
+                  }
                 })
-                .catch((err) => console.warn("Live Zoho update failed:", err));
+                .catch((err) => console.warn("Plan update failed:", err));
             }
           }
         }
@@ -993,6 +1088,20 @@ export default function CopilotView({
 
       if (intent === "CHAT" && !activePlan) {
         setIsPlanPanelOpen(false);
+      }
+
+      // Freshly created plan via chat — offer Save as Draft so the user can
+      // persist it WITHOUT pushing to Zoho. Approval stays a separate step.
+      if (planCreatedViaChat && activePlan) {
+        const draftOfferMsg: Message = {
+          id: `msg-${Date.now()}-assistant-draft-offer`,
+          role: "assistant",
+          content:
+            `The plan for **${activePlan.campaignData.name}** is ready for review on the canvas.\n\n` +
+            `Nothing has been pushed to Zoho yet. Click **Save as Draft** to store it locally (you can approve it later from Campaigns), or **Approve & Sync to Zoho** when you're satisfied with the plan.`,
+          timestamp: new Date(),
+        };
+        setSession((prev) => ({ ...prev, messages: [...prev.messages, draftOfferMsg] }));
       }
 
       // Build campaign context string so n8n has the right Zoho IDs to query
@@ -1552,6 +1661,7 @@ export default function CopilotView({
                     <button onClick={() => sendMessage("Assign all legal tasks to Akash Verma")} className="text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-full font-medium transition-colors cursor-pointer border border-indigo-200">Assign all legal tasks to Akash</button>
                     <button onClick={() => sendMessage("Suggest improvements")} className="text-[10px] bg-sky-50 hover:bg-sky-100 text-sky-700 px-2.5 py-1 rounded-full font-medium transition-colors cursor-pointer border border-sky-200">Suggest improvements</button>
                     <button onClick={() => sendMessage("Approve")} className="text-[10px] bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full font-medium transition-colors cursor-pointer border border-emerald-200 flex items-center gap-1"><CheckCircle size={12} weight="fill" /> Approve</button>
+                    <button onClick={handleSaveWorkingPlanAsDraft} disabled={isSavingDraft} className="text-[10px] bg-stone-100 hover:bg-stone-200 text-stone-700 px-2.5 py-1 rounded-full font-medium transition-colors cursor-pointer border border-stone-200 flex items-center gap-1 disabled:opacity-50"><FloppyDisk size={12} weight="bold" /> {isSavingDraft ? "Saving…" : "Save as Draft"}</button>
                   </>
                 ) : workingPlan && workingPlan.status === "live" ? (
                   <>
@@ -1685,7 +1795,7 @@ export default function CopilotView({
                     )}
                     <button
                       type="button"
-                      onClick={() => handleApprovePlanToZoho()}
+                      onClick={() => handleOpenApprovalModal()}
                       disabled={isPushingToZoho}
                       className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold shadow-xs hover:shadow transition-all cursor-pointer active:scale-98"
                     >
@@ -2167,7 +2277,7 @@ export default function CopilotView({
                     onClick={async () => {
                       const newId = await handleCreateBooksContact();
                       if (newId) {
-                        await handleApprovePlanToZoho(true, newId);
+                        await handleOpenApprovalModal(newId);
                       }
                     }}
                     disabled={isCreatingBooksContact}
@@ -2190,7 +2300,7 @@ export default function CopilotView({
                     type="button"
                     onClick={() => {
                       setIsBooksModalOpen(false);
-                      handleApprovePlanToZoho(true);
+                      handleOpenApprovalModal();
                     }}
                     disabled={isCreatingBooksContact}
                     className="w-full py-2 px-4 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold transition-colors cursor-pointer"
@@ -2211,6 +2321,18 @@ export default function CopilotView({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Approval gate modal — the ONLY path to a Zoho push from the Copilot */}
+      <ZohoApprovalModal
+        open={isApprovalModalOpen}
+        onClose={() => setIsApprovalModalOpen(false)}
+        campaignData={workingPlan?.campaignData || {}}
+        tasks={workingPlan?.tasks || []}
+        booksContact={workingPlan?.booksContact || null}
+        isPushing={isPushingToZoho}
+        source="Copilot"
+        onConfirm={() => confirmApprovePlanToZoho()}
+      />
     </div>
   );
 }

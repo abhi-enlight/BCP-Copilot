@@ -24,9 +24,11 @@ import {
   CircleNotch,
   Trash,
   PencilSimple,
+  FloppyDisk,
 } from "@phosphor-icons/react";
 import { type Campaign, type AspectTask, generateAspectPlan } from "@/app/api/campaigns/route";
 import ZohoProjectsDrawer from "./ZohoProjectsDrawer";
+import ZohoApprovalModal from "./ZohoApprovalModal";
 import ChatMessage, { type Message } from "@/components/ChatMessage";
 import ChatInput from "@/components/ChatInput";
 import ThinkingProcess from "@/components/ThinkingProcess";
@@ -111,6 +113,10 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
   } | null>(null);
 
   const [createdCampaign, setCreatedCampaign] = useState<Campaign | null>(null);
+  // Approval gate state — Zoho push only fires after explicit modal confirmation
+  const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [approvingDraftId, setApprovingDraftId] = useState<string | null>(null);
   const [wizardBooksContact, setWizardBooksContact] = useState<{
     exists: boolean;
     contactId?: string;
@@ -119,6 +125,12 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
   } | null>(null);
   const [isRegisteringBooks, setIsRegisteringBooks] = useState(false);
   const [retryingCampaignId, setRetryingCampaignId] = useState<string | null>(null);
+  const [draftToApprove, setDraftToApprove] = useState<Campaign | null>(null);
+  const [draftBooksContact, setDraftBooksContact] = useState<{
+    exists: boolean;
+    contactId?: string;
+    contactName?: string;
+  } | null>(null);
   const [toastNotice, setToastNotice] = useState<{
     id: string;
     text: string;
@@ -159,40 +171,7 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
   const handleRetrySync = useCallback(
     async (camp: Campaign) => {
       setRetryingCampaignId(camp.id);
-      // A CRM-synced campaign that is missing its Books invoice / Projects workspace
-      // (status "Partial") is healed in-place — the deal is never duplicated.
-      const missingProducts = Boolean(
-        camp.zohoCrmDealId && (!camp.zohoProjectId || !camp.zohoBooksInvoiceId)
-      );
       try {
-        if (missingProducts) {
-          const res = await fetch("/api/campaigns", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "complete_zoho_sync",
-              campaignId: camp.id,
-            }),
-          });
-          const data = await res.json().catch(() => ({}));
-          if (res.ok && data.campaign?.zohoProjectId && data.campaign?.zohoBooksInvoiceId) {
-            showToast(
-              `✅ Zoho sync completed — Project ${data.campaign.zohoProjectId}, Invoice ${data.campaign.zohoBooksInvoiceId}`,
-              "check"
-            );
-            fetchCampaigns();
-          } else if (res.ok && data.campaign) {
-            showToast(
-              "⚠️ Still partial — Zoho Books/Projects did not confirm. Check the n8n Zoho OAuth scopes and retry.",
-              "info"
-            );
-          } else {
-            showToast(data?.message || "Failed to complete Zoho sync", "info");
-          }
-          setRetryingCampaignId(null);
-          return;
-        }
-
         const res = await fetch("/api/campaigns", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -269,6 +248,43 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
     [showToast]
   );
 
+  // Discard a DRAFT campaign card — deletes the Supabase row only.
+  // Drafts were never pushed to Zoho, so no Zoho delete webhook is involved.
+  const handleDiscardDraft = useCallback(
+    async (camp: Campaign) => {
+      if (
+        !window.confirm(
+          `Discard draft "${camp.name}"?\n\nThis permanently removes the draft plan from the local database. Nothing was ever pushed to Zoho, so no Zoho records are affected.`
+        )
+      ) {
+        return;
+      }
+      setDeletingCampaignId(camp.id);
+      try {
+        const res = await fetch("/api/campaigns", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "discard_draft",
+            campaignId: camp.id,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.success) {
+          setCampaigns((prev) => prev.filter((c) => c.id !== camp.id));
+          showToast(`Draft "${camp.name}" discarded — Zoho untouched`, "check");
+        } else {
+          showToast(data.error || "Failed to discard draft", "info");
+        }
+      } catch {
+        showToast("Network error discarding draft", "info");
+      } finally {
+        setDeletingCampaignId(null);
+      }
+    },
+    [showToast]
+  );
+
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
   const [editName, setEditName] = useState("");
   const [editBudget, setEditBudget] = useState("");
@@ -286,7 +302,13 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
     e.preventDefault();
     if (!editingCampaign || !editName.trim()) return;
     setIsSavingEdit(true);
-    showToast(`Saving updates for "${editName}" across Zoho CRM, Projects & Books...`, "info");
+    const isDraft = editingCampaign.status === "Draft" || !editingCampaign.zohoCrmDealId;
+    showToast(
+      isDraft
+        ? `Saving updates for draft "${editName}" locally...`
+        : `Saving updates for "${editName}" across Zoho CRM, Projects & Books...`,
+      "info"
+    );
     try {
       const res = await fetch("/api/campaigns", {
         method: "POST",
@@ -306,6 +328,8 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
       });
 
       if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const reallyDraft = isDraft || data.skipped === "draft_not_synced";
         setCampaigns((prev) =>
           prev.map((c) =>
             c.id === editingCampaign.id
@@ -314,12 +338,19 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                   name: editName.trim(),
                   budget: editBudget.trim(),
                   codeVolume: editVolume.trim(),
-                  lastZohoSync: new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }),
+                  ...(reallyDraft
+                    ? {}
+                    : { lastZohoSync: new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) }),
                 }
               : c
           )
         );
-        showToast(`✨ Updated "${editName}" across Zoho CRM, Projects, and Books!`, "check");
+        showToast(
+          reallyDraft
+            ? `✨ Draft "${editName}" updated locally — approve to sync to Zoho`
+            : `✨ Updated "${editName}" across Zoho CRM, Projects, and Books!`,
+          "check"
+        );
         setEditingCampaign(null);
       } else {
         showToast("Failed to save changes", "info");
@@ -534,6 +565,7 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
   const handleApproveAndPushToZoho = async () => {
     if (!generatedPlan) return;
     setWizardStep("zoho_pushing");
+    // Approval modal stays open with a syncing spinner while the push runs
     try {
       const res = await fetch("/api/campaigns", {
         method: "POST",
@@ -545,18 +577,111 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
           booksCustomerId: wizardBooksContact?.contactId,
         }),
       });
-      const data = await res.json();
-      setTimeout(() => {
-        if (data.campaign) {
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.campaign) {
+        setTimeout(() => {
           setCreatedCampaign(data.campaign);
           setCampaigns((prev) => [data.campaign, ...prev]);
           setWizardStep("push_success");
+          setIsApprovalModalOpen(false);
+          setIsNewModalOpen(true);
           showToast(`Approved & Synced to Zoho`, "check");
-        }
-      }, 1200);
+        }, 1200);
+      } else {
+        showToast(data.error || "Failed to sync to Zoho — plan preserved for retry", "info");
+        setWizardStep("plan_review");
+        setIsApprovalModalOpen(false);
+        setIsNewModalOpen(true);
+      }
     } catch (e) {
       console.error("Failed to sync to Zoho", e);
+      showToast("Failed to sync to Zoho — plan preserved for retry", "info");
+      setWizardStep("plan_review");
+      setIsApprovalModalOpen(false);
+      setIsNewModalOpen(true);
+    }
+  };
+
+  // Save the reviewed plan as a DRAFT — Supabase only, nothing pushed to Zoho
+  const handleSavePlanAsDraft = async () => {
+    if (!generatedPlan) return;
+    setIsSavingDraft(true);
+    try {
+      const res = await fetch("/api/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "save_draft",
+          campaignData: formData,
+          tasks: generatedPlan.tasks,
+          booksCustomerId: wizardBooksContact?.contactId,
+        }),
+      });
+      const data = await res.json();
+      if (data.campaign) {
+        setCampaigns((prev) => [data.campaign, ...prev.filter((c) => c.id !== data.campaign.id)]);
+        showToast("Draft saved — nothing pushed to Zoho. Approve it later from this list.", "info");
+        handleResetModal();
+      } else {
+        showToast(data.error || "Failed to save draft", "info");
+      }
+    } catch (e) {
+      console.error("Failed to save draft", e);
+      showToast("Failed to save draft — check network", "info");
+    } finally {
+      setIsSavingDraft(false);
+    }
+  };
+
+  // Approve an existing DRAFT campaign card — opens the review modal before any Zoho write
+  const handleApproveDraftFromCard = async () => {
+    if (!draftToApprove) return;
+    setApprovingDraftId(draftToApprove.id);
+    try {
+      const res = await fetch("/api/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "approve_and_push_zoho",
+          campaignId: draftToApprove.id,
+          campaignData: {
+            name: draftToApprove.name,
+            client: draftToApprove.client,
+            category: draftToApprove.category,
+            rewardType: draftToApprove.rewardType,
+            budget: draftToApprove.budget,
+            codeVolume: draftToApprove.codeVolume,
+            startDate: draftToApprove.startDate,
+            endDate: draftToApprove.endDate,
+            brief: draftToApprove.brief,
+          },
+          tasks: draftToApprove.tasks,
+          booksCustomerId: draftToApprove.booksCustomerId,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.campaign) {
+        setCampaigns((prev) =>
+          prev.map((c) => (c.id === data.campaign.id ? data.campaign : c))
+        );
+        showToast(data.alreadySynced ? "Campaign was already approved & synced to Zoho" : "Approved & Synced to Zoho", "check");
+        setIsApprovalModalOpen(false);
+        setDraftToApprove(null);
+        setDraftBooksContact(null);
+      } else {
+        showToast(data.error || "Failed to sync to Zoho", "info");
+        setIsApprovalModalOpen(false);
+        setDraftToApprove(null);
+        setDraftBooksContact(null);
+      }
+    } catch (e) {
+      console.error("Failed to sync draft to Zoho", e);
       showToast("Failed to sync to Zoho", "info");
+      setIsApprovalModalOpen(false);
+      setDraftToApprove(null);
+      setDraftBooksContact(null);
+    } finally {
+      setApprovingDraftId(null);
     }
   };
 
@@ -603,6 +728,7 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
   const getStatusStyles = (status: string) => {
     if (status.includes("Live")) return "bg-emerald-50 text-emerald-800 border-emerald-200";
     if (status === "In Review") return "bg-amber-50 text-amber-800 border-amber-200";
+    if (status === "Draft") return "bg-stone-100 text-stone-700 border-stone-300";
     return "bg-stone-100 text-stone-600 border-stone-200";
   };
 
@@ -634,6 +760,28 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Approval gate modal — the ONLY path to a Zoho push from this view */}
+      <ZohoApprovalModal
+        open={isApprovalModalOpen}
+        onClose={() => {
+          setIsApprovalModalOpen(false);
+          setDraftToApprove(null);
+          setDraftBooksContact(null);
+        }}
+        campaignData={draftToApprove || formData}
+        tasks={draftToApprove?.tasks || generatedPlan?.tasks || []}
+        booksContact={draftToApprove ? draftBooksContact : wizardBooksContact}
+        isPushing={wizardStep === "zoho_pushing" || approvingDraftId !== null}
+        source={draftToApprove ? "Draft campaign card" : "New campaign wizard"}
+        onConfirm={() => {
+          if (draftToApprove) {
+            handleApproveDraftFromCard();
+          } else {
+            handleApproveAndPushToZoho();
+          }
+        }}
+      />
 
       {/* Top Header */}
       <header className="h-14 border-b border-stone-200/70 bg-white/90 backdrop-blur-md px-6 flex items-center justify-between flex-shrink-0 z-20">
@@ -903,30 +1051,61 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                     </span>
 
                     <div className="flex items-center gap-1.5">
-                      {(camp.zohoSyncStatus === "Pending" || camp.zohoSyncStatus === "Partial") && (
+                      {camp.status === "Draft" && !camp.zohoCrmDealId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDraftToApprove(camp);
+                            if (camp.booksCustomerId) {
+                              setDraftBooksContact({
+                                exists: true,
+                                contactId: camp.booksCustomerId,
+                                contactName: camp.client,
+                              });
+                            } else {
+                              setDraftBooksContact(null);
+                              fetch("/api/campaigns", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ action: "check_books_contact", client: camp.client }),
+                              })
+                                .then((r) => r.json())
+                                .then((d) => {
+                                  if (d.exists && d.contact) {
+                                    setDraftBooksContact({
+                                      exists: true,
+                                      contactId: d.contact.contactId,
+                                      contactName: d.contact.contactName,
+                                    });
+                                  } else {
+                                    setDraftBooksContact({ exists: false });
+                                  }
+                                })
+                                .catch(() => {});
+                            }
+                            setIsApprovalModalOpen(true);
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all duration-200 cursor-pointer shadow-sm"
+                          title="Review this draft and approve it to create the Zoho CRM Deal, Project & Invoice"
+                        >
+                          <CheckCircle size={13} weight="fill" />
+                          <span>Approve & Push</span>
+                        </button>
+                      )}
+                      {camp.zohoSyncStatus === "Pending" && camp.status !== "Draft" && (
                         <button
                           type="button"
                           disabled={retryingCampaignId === camp.id}
                           onClick={() => handleRetrySync(camp)}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-semibold transition-all duration-200 cursor-pointer border border-amber-200 shadow-2xs disabled:opacity-50"
-                          title={
-                            camp.zohoSyncStatus === "Partial"
-                              ? "Create the missing Zoho Books invoice & Projects workspace for this CRM-synced campaign (deal is not duplicated)"
-                              : "Re-fire the Zoho sync webhook and poll for deal ID"
-                          }
+                          title="Re-fire the Zoho sync webhook and poll for deal ID"
                         >
                           <ArrowsClockwise
                             size={13}
                             weight="bold"
                             className={retryingCampaignId === camp.id ? "animate-spin" : ""}
                           />
-                          <span>
-                            {retryingCampaignId === camp.id
-                              ? "Syncing…"
-                              : camp.zohoSyncStatus === "Partial"
-                              ? "Complete Sync"
-                              : "Retry Sync"}
-                          </span>
+                          <span>{retryingCampaignId === camp.id ? "Syncing…" : "Retry Sync"}</span>
                         </button>
                       )}
                       {onModifyInCopilot && (
@@ -967,9 +1146,17 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                       <button
                         type="button"
                         disabled={deletingCampaignId === camp.id}
-                        onClick={() => handleDeleteCampaign(camp)}
+                        onClick={() =>
+                          camp.status === "Draft" && !camp.zohoCrmDealId
+                            ? handleDiscardDraft(camp)
+                            : handleDeleteCampaign(camp)
+                        }
                         className="p-2 rounded-xl bg-stone-100 hover:bg-rose-50 text-stone-400 hover:text-rose-600 transition-colors cursor-pointer border border-stone-200 shadow-2xs disabled:opacity-50"
-                        title="Delete campaign across Zoho CRM, Projects, Books & Database"
+                        title={
+                          camp.status === "Draft" && !camp.zohoCrmDealId
+                            ? "Discard draft — removes the local plan only (no Zoho records exist)"
+                            : "Delete campaign across Zoho CRM, Projects, Books & Database"
+                        }
                       >
                         {deletingCampaignId === camp.id ? (
                           <ArrowsClockwise size={13} weight="bold" className="animate-spin text-rose-600" />
@@ -1460,6 +1647,21 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                     <div className="flex items-center gap-2.5">
                       <button
                         type="button"
+                        onClick={handleSavePlanAsDraft}
+                        disabled={isSavingDraft}
+                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-stone-100 hover:bg-stone-200 disabled:opacity-50 text-stone-700 text-xs font-semibold transition-all cursor-pointer border border-stone-200"
+                        title="Save this plan as a draft — nothing is pushed to Zoho until you approve"
+                      >
+                        {isSavingDraft ? (
+                          <CircleNotch size={13} className="animate-spin" />
+                        ) : (
+                          <FloppyDisk size={13} weight="bold" />
+                        )}
+                        <span>{isSavingDraft ? "Saving…" : "Save as Draft"}</span>
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => {
                           setIsNewModalOpen(false);
                           if (onModifyInCopilot) {
@@ -1473,9 +1675,10 @@ export default function CampaignsView({ onOpenChatWithPrompt, onModifyInCopilot 
                         <span>Open in Copilot</span>
                       </button>
 
+                      {/* Approval gate: opens the review modal — push happens only after explicit confirmation */}
                       <button
                         type="button"
-                        onClick={handleApproveAndPushToZoho}
+                        onClick={() => setIsApprovalModalOpen(true)}
                         className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer"
                       >
                         <CheckCircle size={16} weight="fill" />

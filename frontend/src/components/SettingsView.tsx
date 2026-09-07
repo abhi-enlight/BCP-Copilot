@@ -22,7 +22,7 @@ export default function SettingsView() {
     timezone: "Asia/Kolkata (IST)",
     zohoClientId: "1000.QGDY8ZROICOLZXB8M0QK3Q41KZ562H",
     zohoDataCenter: "India (.in)",
-    autoPushToZoho: true,
+    autoPushToZoho: false,
     requireAdvancePaymentSignOff: true,
     requirePartnerLogoSignOff: true,
     uatLeadTimeHours: "72",
